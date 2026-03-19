@@ -283,21 +283,13 @@ with right_col:
 # =========================
 # Match row in CSV
 # =========================
-selected_case_norm = normalize_text(selected_case_option)
 selected_location_norm = normalize_text(selected_location)
+selected_case_str = str(selected_case_num).strip()
 
 matched = df_results[
-    (df_results["_cooling_norm"] == selected_case_norm) &
+    (df_results["cooling system type"].astype(str).str.strip() == selected_case_str) &
     (df_results["_location_norm"] == selected_location_norm)
 ]
-
-# fallback matching by case number if exact text in CSV differs
-if matched.empty:
-    fallback_case_prefix = f"case {selected_case_num}"
-    matched = df_results[
-        (df_results["_cooling_norm"].str.startswith(fallback_case_prefix)) &
-        (df_results["_location_norm"] == selected_location_norm)
-    ]
 
 if matched.empty:
     st.warning(
