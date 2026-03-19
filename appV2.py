@@ -160,7 +160,11 @@ def load_results_table(csv_path):
             "Missing required columns in CSV: " + ", ".join(missing)
         )
 
-    # normalized columns for matching
+    # force case column to string for robust matching
+    df["cooling system type"] = df["cooling system type"].astype(str).str.strip()
+    df["Location"] = df["Location"].astype(str).str.strip()
+    df["climate zone"] = df["climate zone"].astype(str).str.strip()
+
     df["_cooling_norm"] = df["cooling system type"].apply(normalize_text)
     df["_location_norm"] = df["Location"].apply(normalize_text)
 
