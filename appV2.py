@@ -65,15 +65,19 @@ CASE_METADATA = {
         "default_temp_c": 30.0
     },
     12: {
-        "label": "Case 12 - large - water cooled chiler + dry cooling tower + free cooling",
+        "label": "Case 12 - large - Cold Plate + water cooled chiler + dry cooling tower + free cooling ",
         "default_temp_c": 45.0
     },
     13: {
-        "label": "Case 13 - large - Immersion + Air coold chiler + free coling",
+        "label": "Case 13 - large - Immersion + water cooled chiler + dry cooling tower + free cooling ",
         "default_temp_c": 55.0
     },
     14: {
-        "label": "Case 14 - large - Cold-Plate + Air coold chiler + free coling",
+        "label": "Case 14 - large - Cold-Plate + Air coold chiler + free cooling",
+        "default_temp_c": 50.0
+        },
+    15: {
+         "label": "Case 15 - large - Immersion + Air coold chiler + free cooling",
         "default_temp_c": 50.0
     },
 }
