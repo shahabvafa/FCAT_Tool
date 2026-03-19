@@ -73,11 +73,11 @@ CASE_METADATA = {
         "default_temp_c": 55.0
     },
     14: {
-        "label": "Case 14 - large - Cold-Plate + Air coold chiler + free cooling",
+        "label": "Case 14 - large - Cold-Plate + Air cooled chiler + free cooling",
         "default_temp_c": 50.0
         },
     15: {
-         "label": "Case 15 - large - Immersion + Air coold chiler + free cooling",
+         "label": "Case 15 - large - Immersion + Air cooled chiler + free cooling",
         "default_temp_c": 50.0
     },
 }
