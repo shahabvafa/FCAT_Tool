@@ -2,80 +2,31 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-
 st.set_page_config(page_title='FCAT Waste Heat Reuse Demo - V2', layout='wide')
 
 st.title('FCAT Waste Heat Reuse Demo')
 st.markdown('Select cooling system type, location, and offtaker application.')
 
 
+# =========================
+# Case metadata
+# =========================
 CASE_METADATA = {
-    1: {
-        'label': 'Case 1 - Large - Airside economizer + adiabatic cooling + (water-cooled) (not used)',
-        'default_temp_c': 30.0,
-    },
-    2: {
-        'label': 'Case 2 - Large - Water economizer + (water-cooled) (not used)',
-        'default_temp_c': 30.0,
-    },
-    3: {
-        'label': 'Case 3 - Midsize - Airside economizer + (water-cooled chiller) (not used)',
-        'default_temp_c': 30.0,
-    },
-    4: {
-        'label': 'Case 4 - Midsize - Water economizer + (water-cooled) (not used)',
-        'default_temp_c': 30.0,
-    },
-    5: {
-        'label': 'Case 5 - Midsize - Water-cooled chiller (not used)',
-        'default_temp_c': 30.0,
-    },
-    6: {
-        'label': 'Case 6 - Midsize - Airside economizer + (air-cooled chiller) (not used)',
-        'default_temp_c': 30.0,
-    },
-    7: {
-        'label': 'Case 7 - Midsize - Air-cooled chiller (not used)',
-        'default_temp_c': 27.0,
-    },
-    8: {
-        'label': 'Case 8 - Small - Water cooled chiler (not used)',
-        'default_temp_c': 27.0,
-    },
-    9: {
-        'label': 'Case 9 - Small - Air-cooled chiller (not used)',
-        'default_temp_c': 27.0,
-    },
-    10: {
-        'label': 'Case 10 - Small - Direct expansion (DX) system (not used)',
-        'default_temp_c': 25.0,
-    },
-    11: {
-        'label': 'Case 11 - Large - Airside economizer + (air-cooled chiller) (not used)',
-        'default_temp_c': 30.0,
-    },
-    12: {
-        'label': 'Case 12 - Large - Water cooled chiler + dry cooling tower + free cooling (not used)',
-        'default_temp_c': 45.0,
-    },
-    13: {
-        'label': 'Case 13 - Large - Immersion + Air coold chiler + free coling (not used)',
-        'default_temp_c': 55.0,
-    },
-    14: {
-        'label': 'Case 14 - Large - Cold-Plate + Air coold chiler + free coling',
-        'default_temp_c': 50.0,
-    },
+    1: {'label': 'Case 1 - Large - Airside economizer + adiabatic cooling + (water-cooled)', 'default_temp_c': 30.0},
+    2: {'label': 'Case 2 - Large - Water economizer + (water-cooled)', 'default_temp_c': 30.0},
+    3: {'label': 'Case 3 - Midsize - Airside economizer + (water-cooled chiller)', 'default_temp_c': 30.0},
+    4: {'label': 'Case 4 - Midsize - Water economizer + (water-cooled)', 'default_temp_c': 30.0},
+    5: {'label': 'Case 5 - Midsize - Water-cooled chiller', 'default_temp_c': 30.0},
+    6: {'label': 'Case 6 - Midsize - Airside economizer + (air-cooled chiller)', 'default_temp_c': 30.0},
+    7: {'label': 'Case 7 - Midsize - Air-cooled chiller', 'default_temp_c': 27.0},
+    8: {'label': 'Case 8 - Small - Water cooled chiler', 'default_temp_c': 27.0},
+    9: {'label': 'Case 9 - Small - Air-cooled chiller', 'default_temp_c': 27.0},
+    10: {'label': 'Case 10 - Small - Direct expansion (DX) system', 'default_temp_c': 25.0},
+    11: {'label': 'Case 11 - Large - Airside economizer + (air-cooled chiller)', 'default_temp_c': 30.0},
+    12: {'label': 'Case 12 - Large - Water cooled chiler + dry cooling tower + free cooling', 'default_temp_c': 45.0},
+    13: {'label': 'Case 13 - Large - Immersion + Air coold chiler + free coling', 'default_temp_c': 55.0},
+    14: {'label': 'Case 14 - Large - Cold-Plate + Air coold chiler + free coling', 'default_temp_c': 50.0},
 }
-
-ALLOWED_LOCATIONS = [
-    'Fargo ND',
-    'Knoxville TN',
-    'Lubbock TX',
-    'Midland TX',
-    'Nashville TN',
-    'Omaha NE',
-]
 
 APPLICATION_OPTIONS = [
     'ORC',
@@ -83,6 +34,9 @@ APPLICATION_OPTIONS = [
 ]
 
 
+# =========================
+# Functions
+# =========================
 def normalize_text(x):
     return str(x).strip().lower()
 
@@ -111,8 +65,7 @@ def eta_use_orc(T_C):
 
 
 def get_erf(T_avail_C, application):
-    app = str(application).strip()
-    if app == 'ORC':
+    if application == 'ORC':
         return float(eta_use_orc(np.array([T_avail_C]))[0])
     return None
 
@@ -121,180 +74,139 @@ def get_erf(T_avail_C, application):
 def load_results_table(csv_path):
     df = pd.read_csv(csv_path)
 
-    expected_cols = [
-        'cooling system type',
-        'climate zone',
-        'Location',
-        'PUE mean',
-        'ERF mean',
-        'ERE mean',
-    ]
-
-    missing = [c for c in expected_cols if c not in df.columns]
-    if missing:
-        raise ValueError('Missing required columns in CSV: ' + ', '.join(missing))
-
-    df['cooling system type'] = df['cooling system type'].astype(str).str.strip()
+    df['cooling system type'] = pd.to_numeric(df['cooling system type'], errors='coerce').astype('Int64')
     df['Location'] = df['Location'].astype(str).str.strip()
     df['climate zone'] = df['climate zone'].astype(str).str.strip()
-
     df['_location_norm'] = df['Location'].apply(normalize_text)
+
     return df
 
 
-def get_default_temperature(case_num):
-    return CASE_METADATA[case_num]['default_temp_c']
+def get_locations_for_case(df, case_num):
+    return sorted(df[df['cooling system type'] == case_num]['Location'].dropna().astype(str).unique())
 
 
-def parse_case_number_from_option(option_text):
-    first_part = option_text.split('-')[0].strip()
-    return int(first_part.replace('Case', '').strip())
+def calculate_outputs(row, application, temp, asic):
+    if asic:
+        temp += 5
 
+    pue = float(row['PUE mean'])
 
-def calculate_outputs_from_row(row, selected_application, waste_temp_input_c, asic_checked):
-    effective_temp_c = float(waste_temp_input_c)
-    if asic_checked:
-        effective_temp_c += 5.0
-
-    pue_mean = float(row['PUE mean'])
-
-    if selected_application == 'ORC':
-        erf_mean = get_erf(effective_temp_c, selected_application)
-        ere_mean = pue_mean * (1.0 - erf_mean)
+    if application == 'ORC':
+        erf = get_erf(temp, application)
+        ere = pue * (1 - erf)
     else:
-        erf_mean = None
-        ere_mean = None
+        erf, ere = None, None
 
-    return {
-        'PUE mean': pue_mean,
-        'ERF mean': erf_mean,
-        'ERE mean': ere_mean,
-        'effective_temp_c': effective_temp_c,
-    }
+    return pue, erf, ere, temp
 
 
-DEFAULT_CSV = 'fcat_case_location_table_v2.csv'
-
-st.sidebar.header('Data Source')
-csv_file = st.sidebar.text_input('Results table CSV file', value=DEFAULT_CSV)
-st.sidebar.caption('Update this CSV in GitHub later. The app reads the table from this file.')
-
-try:
-    df_results = load_results_table(csv_file)
-except Exception as e:
-    st.error(f'Could not load results table: {e}')
-    st.stop()
+# =========================
+# Load CSV
+# =========================
+csv_file = st.sidebar.text_input("CSV file", "6Locations.csv")
+df = load_results_table(csv_file)
 
 
-left_col, right_col = st.columns([1, 1])
+# =========================
+# UI
+# =========================
+col1, col2 = st.columns(2)
 
-with left_col:
-    case_options = [CASE_METADATA[k]['label'] for k in sorted(CASE_METADATA.keys())]
-    selected_case_option = st.selectbox('Cooling system type', options=case_options, index=13)
-
-    selected_case_num = parse_case_number_from_option(selected_case_option)
-    st.caption(f"Selected system: {CASE_METADATA[selected_case_num]['label']}")
-    default_temp_c = get_default_temperature(selected_case_num)
-
-    waste_temp_input_c = st.number_input(
-        'Waste heat temperature (°C) - editable',
-        min_value=0.0,
-        max_value=120.0,
-        value=float(default_temp_c),
-        step=1.0
+with col1:
+    case_label = st.selectbox(
+        "Cooling system type",
+        [CASE_METADATA[k]['label'] for k in CASE_METADATA],
+        index=13
     )
 
-    asic_checked = st.checkbox('ASIC chips (+5 °C)', value=False)
+    case_num = int(case_label.split("-")[0].replace("Case", "").strip())
+    default_temp = CASE_METADATA[case_num]['default_temp_c']
 
-with right_col:
-    selected_location = st.selectbox('Location', options=ALLOWED_LOCATIONS)
-    selected_application = st.selectbox('Offtaker application', options=APPLICATION_OPTIONS, index=0)
+    temp = st.number_input("Waste heat temperature (°C)", value=float(default_temp))
+    asic = st.checkbox("ASIC chips (+5°C)")
 
-    if selected_application != 'ORC':
-        st.info('This application is not used for now. Only ORC is active.')
+with col2:
+    locations = get_locations_for_case(df, case_num)
+    location = st.selectbox("Location", locations)
+
+    application = st.selectbox("Offtaker", APPLICATION_OPTIONS)
 
 
-selected_location_norm = normalize_text(selected_location)
-selected_case_str = str(selected_case_num).strip()
-
-matched = df_results[
-    (df_results['cooling system type'].astype(str).str.strip() == selected_case_str) &
-    (df_results['_location_norm'] == selected_location_norm)
+# =========================
+# Match row
+# =========================
+matched = df[
+    (df['cooling system type'] == case_num) &
+    (df['_location_norm'] == normalize_text(location))
 ]
 
 if matched.empty:
-    st.warning('No matching row found in the CSV for the selected cooling system type and location.')
+    st.warning("No matching row found in the CSV for the selected cooling system type and location.")
     st.stop()
 
 row = matched.iloc[0]
 
-outputs = calculate_outputs_from_row(
-    row=row,
-    selected_application=selected_application,
-    waste_temp_input_c=waste_temp_input_c,
-    asic_checked=asic_checked
-)
 
-st.subheader('Selected Inputs')
-summary_df = pd.DataFrame([{
-    'Cooling system type': selected_case_option,
-    'Climate zone': row['climate zone'],
-    'Location': row['Location'],
-    'Offtaker application': selected_application,
-    'Default waste heat temperature (°C)': default_temp_c,
-    'User-entered waste heat temperature (°C)': waste_temp_input_c,
-    'ASIC checked': asic_checked,
-    'Effective waste heat temperature (°C)': outputs['effective_temp_c'],
-}])
-st.dataframe(summary_df, use_container_width=True)
+# =========================
+# Calculate
+# =========================
+pue, erf, ere, eff_temp = calculate_outputs(row, application, temp, asic)
 
-st.subheader('Results')
-if selected_application == 'ORC':
-    results_df = pd.DataFrame([{
-        'cooling system type': selected_case_option,
-        'climate zone': row['climate zone'],
-        'Location': row['Location'],
-        'PUE mean': outputs['PUE mean'],
-        'ERF mean': outputs['ERF mean'],
-        'ERE mean': outputs['ERE mean'],
-    }])
+
+# =========================
+# Output
+# =========================
+st.subheader("Selected Inputs")
+st.dataframe(pd.DataFrame([{
+    "Cooling system type": case_label,
+    "Climate zone": row["climate zone"],
+    "Location": row["Location"],
+    "Offtaker application": application,
+    "Default waste heat temperature (°C)": default_temp,
+    "User-entered waste heat temperature (°C)": temp,
+    "ASIC checked": asic,
+    "Effective waste heat temperature (°C)": eff_temp
+}]))
+
+st.subheader("Results")
+
+if application == "ORC":
+    st.dataframe(pd.DataFrame([{
+        "Cooling system type": case_label,
+        "Climate zone": row["climate zone"],
+        "Location": row["Location"],
+        "PUE mean": pue,
+        "ERF mean": erf,
+        "ERE mean": ere
+    }]))
 else:
-    results_df = pd.DataFrame([{
-        'cooling system type': selected_case_option,
-        'climate zone': row['climate zone'],
-        'Location': row['Location'],
-        'PUE mean': outputs['PUE mean'],
-        'ERF mean': 'Not used',
-        'ERE mean': 'Not used',
-    }])
+    st.dataframe(pd.DataFrame([{
+        "Cooling system type": case_label,
+        "Climate zone": row["climate zone"],
+        "Location": row["Location"],
+        "PUE mean": pue,
+        "ERF mean": "Not used",
+        "ERE mean": "Not used"
+    }]))
 
-st.dataframe(results_df, use_container_width=True)
+st.subheader("Metrics")
+c1, c2, c3 = st.columns(3)
 
-st.subheader('Key Metrics')
-m1, m2, m3 = st.columns(3)
-m1.metric('PUE mean', f"{outputs['PUE mean']:.4f}")
-m2.metric('ERF mean', f"{outputs['ERF mean']:.4f}" if outputs['ERF mean'] is not None else 'N/A')
-m3.metric('ERE mean', f"{outputs['ERE mean']:.4f}" if outputs['ERE mean'] is not None else 'N/A')
+c1.metric("PUE", f"{pue:.4f}")
+c2.metric("ERF", f"{erf:.4f}" if erf is not None else "N/A")
+c3.metric("ERE", f"{ere:.4f}" if ere is not None else "N/A")
 
-with st.expander('Show source table currently loaded'):
+
+with st.expander("Show source table currently loaded"):
     st.dataframe(
-        df_results[
-            [
-                'cooling system type',
-                'climate zone',
-                'Location',
-                'PUE mean',
-                'ERF mean',
-                'ERE mean',
-            ]
-        ],
+        df[[
+            'cooling system type',
+            'climate zone',
+            'Location',
+            'PUE mean',
+            'ERF mean',
+            'ERE mean'
+        ]],
         use_container_width=True
     )
-
-csv_download = results_df.to_csv(index=False).encode('utf-8')
-st.download_button(
-    label='Download displayed result as CSV',
-    data=csv_download,
-    file_name='selected_result_v2.csv',
-    mime='text/csv'
-)
