@@ -216,7 +216,6 @@ st.subheader("Metrics")
 c1, c2, c3, c4 = st.columns(4)
 
 c1.metric("PUE", f"{outputs['PUE mean']:.4f}")
-c2.metric("eta", f"{outputs['eta']:.4f}" if outputs["eta"] is not None else "N/A")
 c3.metric("ERF", f"{outputs['ERF mean']:.4f}" if outputs["ERF mean"] is not None else "N/A")
 c4.metric("ERE", f"{outputs['ERE mean']:.4f}" if outputs["ERE mean"] is not None else "N/A")
 
