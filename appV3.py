@@ -219,11 +219,7 @@ c1.metric("PUE", f"{outputs['PUE mean']:.4f}")
 c3.metric("ERF", f"{outputs['ERF mean']:.4f}" if outputs["ERF mean"] is not None else "N/A")
 c4.metric("ERE", f"{outputs['ERE mean']:.4f}" if outputs["ERE mean"] is not None else "N/A")
 
-with st.expander("Show source table currently loaded"):
-    st.dataframe(
-        df[['cooling system type', 'climate zone', 'Location', 'PUE mean']],
-        use_container_width=True
-    )
+
 
 st.caption(
     "PUE values are based on the PUE prediction study under review. "
