@@ -29,7 +29,6 @@ APPLICATION_OPTIONS = [
     'Cold water generation using an absorption chiller (not used)',
 ]
 
-# Placeholder/demo values; replace later if you have better case-specific values
 RECOVERABLE_HEAT_FACTOR = {
     1: 0.80,
     2: 0.80,
@@ -55,24 +54,11 @@ def normalize_text(x):
 def eta_use_orc(T_C):
     """
     ORC efficiency from a 2nd-order polynomial fit to the digitized eta curve.
-
-    Fitted equation in percent:
-        eta(%) = a*T^2 + b*T + c
-
-    where:
-        a = -9.77832291e-04
-        b =  1.91002705e-01
-        c = -4.50769764e+00
-
-    Input:
-        T_C : hot water temperature in degC
-
-    Output:
-        eta as a fraction (not percent), e.g. 4.5% -> 0.045
+    Used internally only. Not displayed in the app.
     """
     T_C = np.asarray(T_C, dtype=float)
 
-    # optional: keep temperatures inside fitted data range
+    # Keep temperatures inside fitted data range
     T_C = np.clip(T_C, 42.7314, 84.3096)
 
     a = -9.77832291e-04
@@ -80,13 +66,9 @@ def eta_use_orc(T_C):
     c = -4.50769764e+00
 
     eta_percent = a * T_C**2 + b * T_C + c
-
-    # prevent negative efficiencies
     eta_percent = np.clip(eta_percent, 0.0, None)
 
-    # convert percent to fraction
-    eta = eta_percent / 100.0
-    return eta
+    return eta_percent / 100.0
 
 
 def get_eta(T_avail_C, application):
@@ -130,7 +112,6 @@ def get_locations_for_case(df, case_num):
 def calculate_outputs(case_num, row, application, temp, asic):
     effective_temp = float(temp)
 
-    # if ASIC chips selected, add 5 C
     if asic:
         effective_temp += 5.0
 
@@ -138,17 +119,15 @@ def calculate_outputs(case_num, row, application, temp, asic):
     f_case = RECOVERABLE_HEAT_FACTOR[case_num]
 
     if application == 'ORC':
-        eta = get_eta(effective_temp, application)   # fraction
+        eta = get_eta(effective_temp, application)   # internal only
         erf = (eta * f_case) / pue
         ere = pue - (eta * f_case)
     else:
-        eta = None
         erf = None
         ere = None
 
     return {
         'PUE mean': pue,
-        'eta': eta,
         'ERF mean': erf,
         'ERE mean': ere,
         'effective_temp': effective_temp,
@@ -156,22 +135,16 @@ def calculate_outputs(case_num, row, application, temp, asic):
     }
 
 
-# -----------------------------
-# Sidebar / data loading
-# -----------------------------
 csv_file = st.sidebar.text_input("CSV file", "6Locations.csv")
 df = load_results_table(csv_file)
 
-# -----------------------------
-# UI
-# -----------------------------
 col1, col2 = st.columns(2)
 
 with col1:
     case_label = st.selectbox(
         "Cooling system type",
         [CASE_METADATA[k]['label'] for k in CASE_METADATA],
-        index=13  # default = Case 14
+        index=13
     )
 
     case_num = int(case_label.split("-")[0].replace("Case", "").strip())
@@ -199,12 +172,8 @@ if matched.empty:
     st.stop()
 
 row = matched.iloc[0]
-
 outputs = calculate_outputs(case_num, row, application, temp, asic)
 
-# -----------------------------
-# Inputs summary
-# -----------------------------
 st.subheader("Selected Inputs")
 st.dataframe(pd.DataFrame([{
     "Cooling system type": case_label,
@@ -218,9 +187,6 @@ st.dataframe(pd.DataFrame([{
     "Recoverable heat factor (f_case)": outputs["f_case"],
 }]))
 
-# -----------------------------
-# Results table
-# -----------------------------
 st.subheader("Results")
 
 if application == "ORC":
@@ -229,7 +195,6 @@ if application == "ORC":
         "Climate zone": row["climate zone"],
         "Location": row["Location"],
         "PUE mean": outputs["PUE mean"],
-        "eta": outputs["eta"],
         "ERF mean": outputs["ERF mean"],
         "ERE mean": outputs["ERE mean"],
     }]))
@@ -239,42 +204,16 @@ else:
         "Climate zone": row["climate zone"],
         "Location": row["Location"],
         "PUE mean": outputs["PUE mean"],
-        "eta": "Not used",
         "ERF mean": "Not used",
         "ERE mean": "Not used",
     }]))
 
-# -----------------------------
-# Metrics
-# -----------------------------
 st.subheader("Metrics")
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3 = st.columns(3)
 
 c1.metric("PUE", f"{outputs['PUE mean']:.4f}")
-c2.metric("eta", f"{outputs['eta']:.4f}" if outputs["eta"] is not None else "N/A")
-c3.metric("ERF", f"{outputs['ERF mean']:.4f}" if outputs["ERF mean"] is not None else "N/A")
-c4.metric("ERE", f"{outputs['ERE mean']:.4f}" if outputs["ERE mean"] is not None else "N/A")
-
-# -----------------------------
-# Optional info
-# -----------------------------
-if application == "ORC":
-    st.subheader("ORC eta model")
-    st.markdown(
-        r"""
-        The ORC efficiency is calculated using a 2nd-order polynomial fit to the digitized curve:
-
-        \[
-        \eta(\%) = -9.7783\times10^{-4}T^2 + 0.1910T - 4.5077
-        \]
-
-        In the code, this value is converted from percent to fraction:
-
-        \[
-        \eta = \eta(\%) / 100
-        \]
-        """
-    )
+c2.metric("ERF", f"{outputs['ERF mean']:.4f}" if outputs["ERF mean"] is not None else "N/A")
+c3.metric("ERE", f"{outputs['ERE mean']:.4f}" if outputs["ERE mean"] is not None else "N/A")
 
 st.caption(
     "PUE values are based on the PUE prediction study under review. "
