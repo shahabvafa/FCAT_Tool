@@ -57,6 +57,8 @@ def eta_use_orc(T_C):
     Used internally only. Not displayed in the app.
     """
     T_C = np.asarray(T_C, dtype=float)
+
+    # keep temperatures inside fitted data range
     T_C = np.clip(T_C, 42.7314, 84.3096)
 
     a = -9.77832291e-04
@@ -76,8 +78,15 @@ def get_eta(T_avail_C, application):
 
 
 @st.cache_data
-def load_pue_table(excel_path, sheet_name=0):
-    df = pd.read_excel(excel_path, sheet_name=sheet_name)
+def load_pue_table(file_path):
+    file_path = str(file_path).strip()
+
+    if file_path.lower().endswith(".csv"):
+        df = pd.read_csv(file_path)
+    elif file_path.lower().endswith(".xlsx"):
+        df = pd.read_excel(file_path)
+    else:
+        raise ValueError("Unsupported file format. Please use .csv or .xlsx")
 
     expected_cols = [
         'State',
@@ -89,7 +98,7 @@ def load_pue_table(excel_path, sheet_name=0):
 
     missing = [c for c in expected_cols if c not in df.columns]
     if missing:
-        raise ValueError('Missing required columns in Excel file: ' + ', '.join(missing))
+        raise ValueError('Missing required columns in input file: ' + ', '.join(missing))
 
     df['State'] = df['State'].astype(str).str.strip()
     df['County'] = df['County'].astype(str).str.strip()
@@ -97,7 +106,8 @@ def load_pue_table(excel_path, sheet_name=0):
     df['cooling system type'] = pd.to_numeric(df['cooling system type'], errors='coerce').astype('Int64')
     df['PUE mean'] = pd.to_numeric(df['PUE mean'], errors='coerce')
 
-    df = df.dropna(subset=['State', 'County', 'cooling system type', 'PUE mean'])
+    # Keep rows even if PUE mean is still empty, so all states/counties appear in dropdowns
+    df = df.dropna(subset=['State', 'County', 'cooling system type'])
 
     df['_state_norm'] = df['State'].apply(normalize_text)
     df['_county_norm'] = df['County'].apply(normalize_text)
@@ -110,12 +120,8 @@ def get_states(df):
 
 
 def get_counties_for_state(df, selected_state):
-    return sorted(
-        df[df['_state_norm'] == normalize_text(selected_state)]['County']
-        .dropna()
-        .astype(str)
-        .unique()
-    )
+    filtered = df[df['_state_norm'] == normalize_text(selected_state)]
+    return sorted(filtered['County'].dropna().astype(str).unique())
 
 
 def calculate_outputs(case_num, row, application, temp, asic):
@@ -128,7 +134,7 @@ def calculate_outputs(case_num, row, application, temp, asic):
     f_case = RECOVERABLE_HEAT_FACTOR[case_num]
 
     if application == 'ORC':
-        eta = get_eta(effective_temp, application)
+        eta = get_eta(effective_temp, application)   # internal only
         erf = (eta * f_case) / pue
         ere = pue - (eta * f_case)
     else:
@@ -147,15 +153,16 @@ def calculate_outputs(case_num, row, application, temp, asic):
 # -----------------------------
 # File input
 # -----------------------------
-excel_file = st.sidebar.text_input("PUE Excel file", "county_pue_data_sample.xlsx")
-sheet_name = st.sidebar.text_input("Sheet name or index", "0")
+data_file = st.sidebar.text_input("PUE data file (.csv or .xlsx)", "based_on_state_countiy.csv")
 
 try:
-    sheet_name_parsed = int(sheet_name)
-except ValueError:
-    sheet_name_parsed = sheet_name
-
-df = load_pue_table(excel_file, sheet_name=sheet_name_parsed)
+    df = load_pue_table(data_file)
+except FileNotFoundError:
+    st.error(f"File not found: {data_file}. Make sure the file is in the GitHub repo root and the name matches exactly.")
+    st.stop()
+except Exception as e:
+    st.error(f"Could not load input file. {e}")
+    st.stop()
 
 # -----------------------------
 # UI
@@ -175,7 +182,7 @@ default_temp = CASE_METADATA[case_num]['default_temp_c']
 # 2) State
 states = get_states(df)
 if not states:
-    st.warning("No states found in the Excel file.")
+    st.warning("No states found in the input file.")
     st.stop()
 
 state = st.selectbox("State", states)
@@ -205,10 +212,15 @@ matched = df[
 ]
 
 if matched.empty:
-    st.warning("No matching row found in the Excel file for the selected state, county, and cooling case.")
+    st.warning("No matching row found for the selected state, county, and cooling system type.")
     st.stop()
 
 row = matched.iloc[0]
+
+if pd.isna(row['PUE mean']):
+    st.warning("PUE mean is not filled yet for the selected state, county, and cooling system type.")
+    st.stop()
+
 outputs = calculate_outputs(case_num, row, application, temp, asic)
 
 # -----------------------------
@@ -265,6 +277,6 @@ c2.metric("ERF", f"{outputs['ERF mean']:.4f}" if outputs["ERF mean"] is not None
 c3.metric("ERE", f"{outputs['ERE mean']:.4f}" if outputs["ERE mean"] is not None else "N/A")
 
 st.caption(
-    "PUE is read directly from the county/state Excel table for the selected cooling system type. "
+    "PUE is read directly from the state/county input file for the selected cooling system type. "
     "ERF and ERE are then calculated from the selected PUE and the internal ORC efficiency model."
 )
