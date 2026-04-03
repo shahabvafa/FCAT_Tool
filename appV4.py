@@ -89,16 +89,12 @@ def load_pue_table(excel_path, sheet_name=0):
 
     missing = [c for c in expected_cols if c not in df.columns]
     if missing:
-        raise ValueError(
-            'Missing required columns in Excel file: ' + ', '.join(missing)
-        )
+        raise ValueError('Missing required columns in Excel file: ' + ', '.join(missing))
 
     df['State'] = df['State'].astype(str).str.strip()
     df['County'] = df['County'].astype(str).str.strip()
     df['climate zone'] = df['climate zone'].astype(str).str.strip()
-    df['cooling system type'] = pd.to_numeric(
-        df['cooling system type'], errors='coerce'
-    ).astype('Int64')
+    df['cooling system type'] = pd.to_numeric(df['cooling system type'], errors='coerce').astype('Int64')
     df['PUE mean'] = pd.to_numeric(df['PUE mean'], errors='coerce')
 
     df = df.dropna(subset=['State', 'County', 'cooling system type', 'PUE mean'])
@@ -132,7 +128,7 @@ def calculate_outputs(case_num, row, application, temp, asic):
     f_case = RECOVERABLE_HEAT_FACTOR[case_num]
 
     if application == 'ORC':
-        eta = get_eta(effective_temp, application)   # internal only
+        eta = get_eta(effective_temp, application)
         erf = (eta * f_case) / pue
         ere = pue - (eta * f_case)
     else:
@@ -151,7 +147,7 @@ def calculate_outputs(case_num, row, application, temp, asic):
 # -----------------------------
 # File input
 # -----------------------------
-excel_file = st.sidebar.text_input("PUE Excel file", "county_pue_data.xlsx")
+excel_file = st.sidebar.text_input("PUE Excel file", "county_pue_data_sample.xlsx")
 sheet_name = st.sidebar.text_input("Sheet name or index", "0")
 
 try:
@@ -164,36 +160,40 @@ df = load_pue_table(excel_file, sheet_name=sheet_name_parsed)
 # -----------------------------
 # UI
 # -----------------------------
-col1, col2 = st.columns(2)
+st.subheader("Inputs")
 
-with col1:
-    case_label = st.selectbox(
-        "Cooling system type",
-        [CASE_METADATA[k]['label'] for k in CASE_METADATA],
-        index=13
-    )
+# 1) Cooling system type
+case_label = st.selectbox(
+    "Cooling system type",
+    [CASE_METADATA[k]['label'] for k in CASE_METADATA],
+    index=13
+)
 
-    case_num = int(case_label.split("-")[0].replace("Case", "").strip())
-    default_temp = CASE_METADATA[case_num]['default_temp_c']
+case_num = int(case_label.split("-")[0].replace("Case", "").strip())
+default_temp = CASE_METADATA[case_num]['default_temp_c']
 
-    temp = st.number_input("Waste heat temperature (°C)", value=float(default_temp))
-    asic = st.checkbox("ASIC chips (+5°C)")
+# 2) State
+states = get_states(df)
+if not states:
+    st.warning("No states found in the Excel file.")
+    st.stop()
 
-with col2:
-    states = get_states(df)
-    if not states:
-        st.warning("No states found in the Excel file.")
-        st.stop()
+state = st.selectbox("State", states)
 
-    state = st.selectbox("State", states)
+# 3) County
+counties = get_counties_for_state(df, state)
+if not counties:
+    st.warning("No counties found for the selected state.")
+    st.stop()
 
-    counties = get_counties_for_state(df, state)
-    if not counties:
-        st.warning("No counties found for the selected state.")
-        st.stop()
+county = st.selectbox("County", counties)
 
-    county = st.selectbox("County", counties)
-    application = st.selectbox("Offtaker", APPLICATION_OPTIONS)
+# 4) Offtaker
+application = st.selectbox("Offtaker", APPLICATION_OPTIONS)
+
+# Extra inputs
+temp = st.number_input("Waste heat temperature (°C)", value=float(default_temp))
+asic = st.checkbox("ASIC chips (+5°C)")
 
 # -----------------------------
 # Find matching row directly
