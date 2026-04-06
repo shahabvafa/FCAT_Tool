@@ -79,7 +79,7 @@ CASE_METADATA = {
         'short_description': 'Midsize data center using an air-cooled chiller without economizer.'
     },
     8: {
-        'label': 'Case 8 - Small - Water cooled chiler',
+        'label': 'Case 8 - Small - Water cooled chiller',
         'default_temp_c': 45.0,
         'size': 'Small',
         'heat_removal': 'Mechanical cooling',
@@ -119,7 +119,7 @@ CASE_METADATA = {
         'short_description': 'Large data center with airside economizer and air-cooled chiller.'
     },
     12: {
-        'label': 'Case 12 - Large - Water cooled chiler + dry cooling tower + free cooling',
+        'label': 'Case 12 - Large - Water cooled chiller + dry cooling tower + free cooling',
         'default_temp_c': 45.0,
         'size': 'Large',
         'heat_removal': 'Free cooling + dry cooling tower',
@@ -129,7 +129,7 @@ CASE_METADATA = {
         'short_description': 'Large data center using water-cooled chiller, dry cooling tower, and free cooling.'
     },
     13: {
-        'label': 'Case 13 - Large - Immersion + Air coold chiler + free coling',
+        'label': 'Case 13 - Large - Immersion + Air coold chiller + free coling',
         'default_temp_c': 55.0,
         'size': 'Large',
         'heat_removal': 'Immersion cooling',
@@ -139,7 +139,7 @@ CASE_METADATA = {
         'short_description': 'Large data center with immersion cooling, air-cooled chiller, and free cooling.'
     },
     14: {
-        'label': 'Case 14 - Large - Cold-Plate + Air coold chiler + free coling',
+        'label': 'Case 14 - Large - Cold-Plate + Air coold chiller + free coling',
         'default_temp_c': 50.0,
         'size': 'Large',
         'heat_removal': 'Cold-plate cooling',
