@@ -129,7 +129,7 @@ CASE_METADATA = {
         'short_description': 'Large data center using water-cooled chiller, dry cooling tower, and free cooling.'
     },
     13: {
-        'label': 'Case 13 - Large - Immersion + Air coold chiller + free coling',
+        'label': 'Case 13 - Large - Immersion + Air cooled chiller + free cooling',
         'default_temp_c': 55.0,
         'size': 'Large',
         'heat_removal': 'Immersion cooling',
@@ -139,7 +139,7 @@ CASE_METADATA = {
         'short_description': 'Large data center with immersion cooling, air-cooled chiller, and free cooling.'
     },
     14: {
-        'label': 'Case 14 - Large - Cold-Plate + Air coold chiller + free coling',
+        'label': 'Case 14 - Large - Cold-Plate + Air cooled chiller + free cooling',
         'default_temp_c': 50.0,
         'size': 'Large',
         'heat_removal': 'Cold-plate cooling',
