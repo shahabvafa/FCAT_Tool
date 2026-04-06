@@ -8,20 +8,146 @@ st.title('FCAT Waste Heat Reuse Demo')
 st.markdown('Select cooling system type, state, county, and offtaker application.')
 
 CASE_METADATA = {
-    1: {'label': 'Case 1 - Large - Airside economizer + adiabatic cooling + (water-cooled)', 'default_temp_c': 45.0},
-    2: {'label': 'Case 2 - Large - Water economizer + (water-cooled)', 'default_temp_c': 45.0},
-    3: {'label': 'Case 3 - Midsize - Airside economizer + (water-cooled chiller)', 'default_temp_c': 45.0},
-    4: {'label': 'Case 4 - Midsize - Water economizer + (water-cooled)', 'default_temp_c': 45.0},
-    5: {'label': 'Case 5 - Midsize - Water-cooled chiller', 'default_temp_c': 45.0},
-    6: {'label': 'Case 6 - Midsize - Airside economizer + (air-cooled chiller)', 'default_temp_c': 45.0},
-    7: {'label': 'Case 7 - Midsize - Air-cooled chiller', 'default_temp_c': 45.0},
-    8: {'label': 'Case 8 - Small - Water cooled chiler', 'default_temp_c': 45.0},
-    9: {'label': 'Case 9 - Small - Air-cooled chiller', 'default_temp_c': 45.0},
-    10: {'label': 'Case 10 - Small - Direct expansion (DX) system', 'default_temp_c': 45.0},
-    11: {'label': 'Case 11 - Large - Airside economizer + (air-cooled chiller)', 'default_temp_c': 45.0},
-    12: {'label': 'Case 12 - Large - Water cooled chiler + dry cooling tower + free cooling', 'default_temp_c': 45.0},
-    13: {'label': 'Case 13 - Large - Immersion + Air coold chiler + free coling', 'default_temp_c': 55.0},
-    14: {'label': 'Case 14 - Large - Cold-Plate + Air coold chiler + free coling', 'default_temp_c': 50.0},
+    1: {
+        'label': 'Case 1 - Large - Airside economizer + adiabatic cooling + (water-cooled)',
+        'default_temp_c': 45.0,
+        'size': 'Large',
+        'heat_removal': 'Airside economizer + adiabatic cooling',
+        'chiller': 'Water-cooled',
+        'economizer': 'Airside economizer',
+        'liquid_cooling': 'No',
+        'short_description': 'Large data center with airside economizer and adiabatic cooling, using a water-cooled system.'
+    },
+    2: {
+        'label': 'Case 2 - Large - Water economizer + (water-cooled)',
+        'default_temp_c': 45.0,
+        'size': 'Large',
+        'heat_removal': 'Water economizer',
+        'chiller': 'Water-cooled',
+        'economizer': 'Water economizer',
+        'liquid_cooling': 'No',
+        'short_description': 'Large data center using a water economizer with a water-cooled system.'
+    },
+    3: {
+        'label': 'Case 3 - Midsize - Airside economizer + (water-cooled chiller)',
+        'default_temp_c': 45.0,
+        'size': 'Midsize',
+        'heat_removal': 'Airside economizer',
+        'chiller': 'Water-cooled chiller',
+        'economizer': 'Airside economizer',
+        'liquid_cooling': 'No',
+        'short_description': 'Midsize data center with airside economizer and water-cooled chiller.'
+    },
+    4: {
+        'label': 'Case 4 - Midsize - Water economizer + (water-cooled)',
+        'default_temp_c': 45.0,
+        'size': 'Midsize',
+        'heat_removal': 'Water economizer',
+        'chiller': 'Water-cooled',
+        'economizer': 'Water economizer',
+        'liquid_cooling': 'No',
+        'short_description': 'Midsize data center using a water economizer with water-cooled equipment.'
+    },
+    5: {
+        'label': 'Case 5 - Midsize - Water-cooled chiller',
+        'default_temp_c': 45.0,
+        'size': 'Midsize',
+        'heat_removal': 'Mechanical cooling',
+        'chiller': 'Water-cooled chiller',
+        'economizer': 'None',
+        'liquid_cooling': 'No',
+        'short_description': 'Midsize data center using a water-cooled chiller without economizer.'
+    },
+    6: {
+        'label': 'Case 6 - Midsize - Airside economizer + (air-cooled chiller)',
+        'default_temp_c': 45.0,
+        'size': 'Midsize',
+        'heat_removal': 'Airside economizer',
+        'chiller': 'Air-cooled chiller',
+        'economizer': 'Airside economizer',
+        'liquid_cooling': 'No',
+        'short_description': 'Midsize data center with airside economizer and air-cooled chiller.'
+    },
+    7: {
+        'label': 'Case 7 - Midsize - Air-cooled chiller',
+        'default_temp_c': 45.0,
+        'size': 'Midsize',
+        'heat_removal': 'Mechanical cooling',
+        'chiller': 'Air-cooled chiller',
+        'economizer': 'None',
+        'liquid_cooling': 'No',
+        'short_description': 'Midsize data center using an air-cooled chiller without economizer.'
+    },
+    8: {
+        'label': 'Case 8 - Small - Water cooled chiler',
+        'default_temp_c': 45.0,
+        'size': 'Small',
+        'heat_removal': 'Mechanical cooling',
+        'chiller': 'Water-cooled chiller',
+        'economizer': 'None',
+        'liquid_cooling': 'No',
+        'short_description': 'Small data center using a water-cooled chiller.'
+    },
+    9: {
+        'label': 'Case 9 - Small - Air-cooled chiller',
+        'default_temp_c': 45.0,
+        'size': 'Small',
+        'heat_removal': 'Mechanical cooling',
+        'chiller': 'Air-cooled chiller',
+        'economizer': 'None',
+        'liquid_cooling': 'No',
+        'short_description': 'Small data center using an air-cooled chiller.'
+    },
+    10: {
+        'label': 'Case 10 - Small - Direct expansion (DX) system',
+        'default_temp_c': 45.0,
+        'size': 'Small',
+        'heat_removal': 'Direct expansion cooling',
+        'chiller': 'DX system',
+        'economizer': 'None',
+        'liquid_cooling': 'No',
+        'short_description': 'Small data center using direct expansion (DX) cooling.'
+    },
+    11: {
+        'label': 'Case 11 - Large - Airside economizer + (air-cooled chiller)',
+        'default_temp_c': 45.0,
+        'size': 'Large',
+        'heat_removal': 'Airside economizer',
+        'chiller': 'Air-cooled chiller',
+        'economizer': 'Airside economizer',
+        'liquid_cooling': 'No',
+        'short_description': 'Large data center with airside economizer and air-cooled chiller.'
+    },
+    12: {
+        'label': 'Case 12 - Large - Water cooled chiler + dry cooling tower + free cooling',
+        'default_temp_c': 45.0,
+        'size': 'Large',
+        'heat_removal': 'Free cooling + dry cooling tower',
+        'chiller': 'Water-cooled chiller',
+        'economizer': 'Free cooling',
+        'liquid_cooling': 'No',
+        'short_description': 'Large data center using water-cooled chiller, dry cooling tower, and free cooling.'
+    },
+    13: {
+        'label': 'Case 13 - Large - Immersion + Air coold chiler + free coling',
+        'default_temp_c': 55.0,
+        'size': 'Large',
+        'heat_removal': 'Immersion cooling',
+        'chiller': 'Air-cooled chiller',
+        'economizer': 'Free cooling',
+        'liquid_cooling': 'Yes - Immersion',
+        'short_description': 'Large data center with immersion cooling, air-cooled chiller, and free cooling.'
+    },
+    14: {
+        'label': 'Case 14 - Large - Cold-Plate + Air coold chiler + free coling',
+        'default_temp_c': 50.0,
+        'size': 'Large',
+        'heat_removal': 'Cold-plate cooling',
+        'chiller': 'Air-cooled chiller',
+        'economizer': 'Free cooling',
+        'liquid_cooling': 'Yes - Cold plate',
+        'short_description': 'Large data center with cold-plate cooling, air-cooled chiller, and free cooling.'
+    },
 }
 
 APPLICATION_OPTIONS = [
@@ -212,6 +338,7 @@ case_label = st.selectbox(
 
 case_num = int(case_label.split("-")[0].replace("Case", "").strip())
 default_temp = CASE_METADATA[case_num]['default_temp_c']
+case_info = CASE_METADATA[case_num]
 
 # 2) State
 states = get_states(df)
@@ -235,6 +362,27 @@ application = st.selectbox("Offtaker", APPLICATION_OPTIONS)
 # Extra inputs
 temp = st.number_input("Waste heat temperature (°C)", value=float(default_temp))
 asic = st.checkbox("ASIC chips (+5°C)")
+
+# -----------------------------
+# Case details (Request 5)
+# -----------------------------
+st.subheader("Cooling System Case Details")
+
+st.caption("Additional details for the selected cooling system case.")
+
+case_details_df = pd.DataFrame([{
+    "Case": f"Case {case_num}",
+    "System size": case_info["size"],
+    "Primary heat removal approach": case_info["heat_removal"],
+    "Chiller/system type": case_info["chiller"],
+    "Economizer type": case_info["economizer"],
+    "Liquid cooling": case_info["liquid_cooling"],
+    "Recommended waste heat temperature (°C)": case_info["default_temp_c"],
+    "Recoverable heat factor (f_case)": RECOVERABLE_HEAT_FACTOR[case_num],
+}])
+
+st.dataframe(case_details_df, use_container_width=True)
+st.info(case_info["short_description"])
 
 # -----------------------------
 # Find matching row directly
@@ -375,14 +523,57 @@ else:
 st.dataframe(results_df, use_container_width=True)
 
 # -----------------------------
-# Metrics
+# Metrics (Request 6)
 # -----------------------------
 st.subheader("Metrics")
+
 c1, c2, c3 = st.columns(3)
 
-c1.metric("PUE", f"{outputs['PUE mean']:.4f}")
-c2.metric("ERF", f"{outputs['ERF mean']:.4f}" if outputs["ERF mean"] is not None else "N/A")
-c3.metric("ERE", f"{outputs['ERE mean']:.4f}" if outputs["ERE mean"] is not None else "N/A")
+with c1:
+    st.metric(
+        "PUE",
+        f"{outputs['PUE mean']:.4f}",
+        help="Power Usage Effectiveness (PUE) = Total facility energy / IT energy. Lower values indicate better overall data center energy performance."
+    )
+
+with c2:
+    st.metric(
+        "ERF",
+        f"{outputs['ERF mean']:.4f}" if outputs["ERF mean"] is not None else "N/A",
+        help="Energy Reuse Factor (ERF) is the fraction of total data center energy that is recovered and reused. Higher values are generally better."
+    )
+
+with c3:
+    st.metric(
+        "ERE",
+        f"{outputs['ERE mean']:.4f}" if outputs["ERE mean"] is not None else "N/A",
+        help="Energy Reuse Effectiveness (ERE) adjusts PUE by accounting for recovered energy. Lower values are generally better."
+    )
+
+# -----------------------------
+# Quick metric explanations
+# -----------------------------
+st.subheader("Metric Explanations")
+
+metric_explanations_df = pd.DataFrame([
+    {
+        "Metric": "PUE",
+        "Short description": "Total facility energy divided by IT energy.",
+        "How to interpret": "Lower is better."
+    },
+    {
+        "Metric": "ERF",
+        "Short description": "Fraction of total data center energy that is recovered and reused.",
+        "How to interpret": "Higher is better."
+    },
+    {
+        "Metric": "ERE",
+        "Short description": "Adjusted PUE after accounting for recovered/reused energy.",
+        "How to interpret": "Lower is better."
+    }
+])
+
+st.dataframe(metric_explanations_df, use_container_width=True)
 
 # -----------------------------
 # Calculation Notes
