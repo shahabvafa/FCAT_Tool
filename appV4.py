@@ -54,7 +54,7 @@ def normalize_text(x):
 def eta_use_orc(T_C):
     """
     ORC efficiency from a 2nd-order polynomial fit to the digitized eta curve.
-    Used internally only. Not displayed in the app.
+    Used internally unless user overrides the value.
     """
     T_C = np.asarray(T_C, dtype=float)
 
@@ -124,29 +124,63 @@ def get_counties_for_state(df, selected_state):
     return sorted(filtered['County'].dropna().astype(str).unique())
 
 
-def calculate_outputs(case_num, row, application, temp, asic):
+def calculate_outputs(
+    case_num,
+    row,
+    application,
+    temp,
+    asic,
+    pue_override_enabled=False,
+    pue_override_value=None,
+    eta_override_enabled=False,
+    eta_override_value=None,
+):
     effective_temp = float(temp)
 
     if asic:
         effective_temp += 5.0
 
-    pue = float(row['PUE mean'])
+    pue_file = float(row['PUE mean'])
+
+    if pue_override_enabled:
+        pue = float(pue_override_value)
+        pue_source = "User override"
+    else:
+        pue = pue_file
+        pue_source = "Input file"
+
     f_case = RECOVERABLE_HEAT_FACTOR[case_num]
 
     if application == 'ORC':
-        eta = get_eta(effective_temp, application)   # internal only
+        eta_model = get_eta(effective_temp, application)
+
+        if eta_override_enabled:
+            eta = float(eta_override_value)
+            eta_source = "User override"
+        else:
+            eta = eta_model
+            eta_source = "Internal ORC model"
+
         erf = (eta * f_case) / pue
         ere = pue - (eta * f_case)
     else:
+        eta_model = None
+        eta = None
+        eta_source = "Not used"
         erf = None
         ere = None
 
     return {
         'PUE mean': pue,
+        'PUE file': pue_file,
+        'PUE source': pue_source,
         'ERF mean': erf,
         'ERE mean': ere,
         'effective_temp': effective_temp,
         'f_case': f_case,
+        'eta_model': eta_model,
+        'eta_used': eta,
+        'eta_source': eta_source,
     }
 
 
@@ -217,11 +251,68 @@ if matched.empty:
 
 row = matched.iloc[0]
 
-if pd.isna(row['PUE mean']):
-    st.warning("PUE mean is not filled yet for the selected state, county, and cooling system type.")
+# -----------------------------
+# Override controls
+# -----------------------------
+st.subheader("Optional Overrides")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    pue_override_enabled = st.checkbox("Override PUE value")
+    if pue_override_enabled:
+        default_pue_for_override = float(row['PUE mean']) if not pd.isna(row['PUE mean']) else 1.20
+        pue_override_value = st.number_input(
+            "Manual PUE value",
+            min_value=0.0001,
+            value=float(default_pue_for_override),
+            step=0.01,
+            format="%.4f",
+        )
+    else:
+        pue_override_value = None
+
+with col2:
+    if application == "ORC":
+        eta_preview = get_eta(temp + (5.0 if asic else 0.0), application)
+        eta_preview_percent = float(eta_preview * 100.0) if eta_preview is not None else 10.0
+
+        eta_override_enabled = st.checkbox("Override offtaker efficiency")
+        if eta_override_enabled:
+            eta_override_percent = st.number_input(
+                "Manual offtaker efficiency (%)",
+                min_value=0.0,
+                max_value=100.0,
+                value=float(eta_preview_percent),
+                step=0.1,
+                format="%.2f",
+            )
+            eta_override_value = eta_override_percent / 100.0
+        else:
+            eta_override_value = None
+    else:
+        eta_override_enabled = False
+        eta_override_value = None
+        st.info("Offtaker efficiency override is only used for ORC.")
+
+# -----------------------------
+# Validation
+# -----------------------------
+if pd.isna(row['PUE mean']) and not pue_override_enabled:
+    st.warning("PUE mean is not filled yet for the selected state, county, and cooling system type. Use PUE override if you want to continue.")
     st.stop()
 
-outputs = calculate_outputs(case_num, row, application, temp, asic)
+outputs = calculate_outputs(
+    case_num=case_num,
+    row=row,
+    application=application,
+    temp=temp,
+    asic=asic,
+    pue_override_enabled=pue_override_enabled,
+    pue_override_value=pue_override_value,
+    eta_override_enabled=eta_override_enabled,
+    eta_override_value=eta_override_value,
+)
 
 # -----------------------------
 # Selected inputs
@@ -238,7 +329,9 @@ st.dataframe(pd.DataFrame([{
     "ASIC checked": asic,
     "Effective waste heat temperature (°C)": outputs["effective_temp"],
     "Recoverable heat factor (f_case)": outputs["f_case"],
-}]))
+    "PUE source": outputs["PUE source"],
+    "Eta source": outputs["eta_source"],
+}]), use_container_width=True)
 
 # -----------------------------
 # Results
@@ -251,20 +344,23 @@ if application == "ORC":
         "State": state,
         "County": county,
         "Climate zone": row["climate zone"],
-        "PUE mean": outputs["PUE mean"],
+        "PUE file value": outputs["PUE file"],
+        "PUE used": outputs["PUE mean"],
+        "Eta used": outputs["eta_used"],
         "ERF mean": outputs["ERF mean"],
         "ERE mean": outputs["ERE mean"],
-    }]))
+    }]), use_container_width=True)
 else:
     st.dataframe(pd.DataFrame([{
         "Cooling system type": case_label,
         "State": state,
         "County": county,
         "Climate zone": row["climate zone"],
-        "PUE mean": outputs["PUE mean"],
+        "PUE file value": outputs["PUE file"],
+        "PUE used": outputs["PUE mean"],
         "ERF mean": "Not used",
         "ERE mean": "Not used",
-    }]))
+    }]), use_container_width=True)
 
 # -----------------------------
 # Metrics
@@ -276,7 +372,27 @@ c1.metric("PUE", f"{outputs['PUE mean']:.4f}")
 c2.metric("ERF", f"{outputs['ERF mean']:.4f}" if outputs["ERF mean"] is not None else "N/A")
 c3.metric("ERE", f"{outputs['ERE mean']:.4f}" if outputs["ERE mean"] is not None else "N/A")
 
+# -----------------------------
+# Notes
+# -----------------------------
+st.subheader("Calculation Notes")
+
+notes = {
+    "PUE source": outputs["PUE source"],
+    "PUE file value": f"{outputs['PUE file']:.4f}" if pd.notna(outputs["PUE file"]) else "Missing",
+}
+
+if application == "ORC":
+    notes["Of ftaker efficiency source"] = outputs["eta_source"]
+    notes["Of ftaker efficiency used"] = f"{outputs['eta_used']:.4f} ({outputs['eta_used']*100:.2f}%)"
+
+    if outputs["eta_model"] is not None:
+        notes["Internal ORC model efficiency"] = f"{outputs['eta_model']:.4f} ({outputs['eta_model']*100:.2f}%)"
+
+st.dataframe(pd.DataFrame([notes]), use_container_width=True)
+
 st.caption(
-    "PUE is read directly from the state/county input file for the selected cooling system type. "
-    "ERF and ERE are then calculated from the selected PUE and the internal ORC efficiency model."
+    "PUE is normally read from the state/county input file for the selected cooling system type, "
+    "unless the user overrides it. For ORC, offtaker efficiency is normally taken from the internal "
+    "ORC efficiency model, unless the user overrides it."
 )
