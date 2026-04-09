@@ -152,10 +152,11 @@ CASE_METADATA = {
 
 APPLICATION_OPTIONS = [
     'ORC',
-    'Cold water generation using an absorption chiller (not used)',
+    'Cold water generation using an absorption chiller',
 ]
 
-# Q_avail relative to P_IT
+ABSORPTION_EVAP_OPTIONS = [-10, -5, 0]
+
 Q_AVAIL_FACTOR = {
     1: 0.80,
     2: 0.80,
@@ -179,9 +180,6 @@ def normalize_text(x):
 
 
 def eta_use_orc(T_C):
-    """
-    ORC efficiency from a 2nd-order polynomial fit to the digitized eta curve.
-    """
     T_C = np.asarray(T_C, dtype=float)
     T_C = np.clip(T_C, 42.7314, 84.3096)
 
@@ -195,9 +193,30 @@ def eta_use_orc(T_C):
     return eta_percent / 100.0
 
 
-def get_eta(T_avail_C, application):
+def cop_use_absorption(T_gen_C, T_evap_C):
+    T_gen_C = np.asarray(T_gen_C, dtype=float)
+
+    if T_evap_C == -10:
+        cop = -1.390e-05 * T_gen_C**2 + 3.05662e-03 * T_gen_C + 0.35476099
+    elif T_evap_C == -5:
+        cop = 2.39e-06 * T_gen_C**2 - 1.07259e-03 * T_gen_C + 0.62829248
+    elif T_evap_C == 0:
+        cop = 1.143e-05 * T_gen_C**2 - 3.31724e-03 * T_gen_C + 0.78234054
+    else:
+        raise ValueError("T_evap_C must be one of -10, -5, or 0.")
+
+    return np.clip(cop, 0.0, None)
+
+
+def get_offtaker_performance(T_avail_C, application, abs_evap_temp_c=None):
     if application == 'ORC':
         return float(eta_use_orc(np.array([T_avail_C]))[0])
+
+    if application == 'Cold water generation using an absorption chiller':
+        if abs_evap_temp_c is None:
+            raise ValueError("abs_evap_temp_c is required for the absorption chiller application.")
+        return float(cop_use_absorption(np.array([T_avail_C]), abs_evap_temp_c)[0])
+
     return None
 
 
@@ -258,8 +277,8 @@ def calculate_outputs(
     pue_override_value=None,
     eta_override_enabled=False,
     eta_override_value=None,
+    abs_evap_temp_c=None,
 ):
-    # normalized basis
     p_it = 1.0
 
     effective_temp = float(temp)
@@ -277,32 +296,59 @@ def calculate_outputs(
 
     q_avail = Q_AVAIL_FACTOR[case_num]
 
-    # Main formulation
     p_dc = pue * p_it
     p_wh_avail = q_avail * p_it
     p_wh_use = phi_use * p_wh_avail
 
-    # Standard ERF/ERE formulation
     erf = p_wh_use / p_dc
     ere = (p_dc - p_wh_use) / p_it
+
+    p_total_to_offtaker = p_wh_use
+    t_offtaker_in = effective_temp
 
     if application == 'ORC':
         if eta_override_enabled:
             eta = float(eta_override_value)
             eta_source = "Manual override"
-            eta_model = get_eta(effective_temp, application)
+            eta_model = get_offtaker_performance(t_offtaker_in, application) if t_offtaker_in is not None else None
         else:
-            eta_model = get_eta(effective_temp, application)
+            eta_model = get_offtaker_performance(t_offtaker_in, application) if t_offtaker_in is not None else 0.0
             eta = eta_model
             eta_source = "Internal ORC model"
 
-        # ORC output reported separately
-        p_orc = eta * p_wh_use
+        p_orc = eta * p_total_to_offtaker
+        cop_abs = None
+        q_chilled = None
+
+    elif application == 'Cold water generation using an absorption chiller':
+        if eta_override_enabled:
+            cop_abs = float(eta_override_value)
+            eta_source = "Manual override"
+            eta_model = get_offtaker_performance(
+                t_offtaker_in,
+                application,
+                abs_evap_temp_c=abs_evap_temp_c
+            ) if t_offtaker_in is not None else None
+        else:
+            eta_model = get_offtaker_performance(
+                t_offtaker_in,
+                application,
+                abs_evap_temp_c=abs_evap_temp_c
+            ) if t_offtaker_in is not None else 0.0
+            cop_abs = eta_model
+            eta_source = "Internal absorption chiller COP model"
+
+        q_chilled = cop_abs * p_total_to_offtaker
+        p_orc = None
+        eta = cop_abs
+
     else:
         eta_model = None
         eta = None
         eta_source = "Not used"
         p_orc = None
+        cop_abs = None
+        q_chilled = None
 
     return {
         'PIT': p_it,
@@ -317,10 +363,15 @@ def calculate_outputs(
         'ERF mean': erf,
         'ERE mean': ere,
         'effective_temp': effective_temp,
+        'Ptotal_offtaker': p_total_to_offtaker,
+        'Tofftaker_in': t_offtaker_in,
         'eta_model': eta_model,
         'eta_used': eta,
         'eta_source': eta_source,
         'PORC': p_orc,
+        'COP_abs': cop_abs,
+        'Q_chilled': q_chilled,
+        'abs_evap_temp_c': abs_evap_temp_c,
     }
 
 
@@ -368,6 +419,16 @@ if not counties:
 county = st.selectbox("County", counties)
 
 application = st.selectbox("Offtaker", APPLICATION_OPTIONS)
+
+if application == "Cold water generation using an absorption chiller":
+    abs_evap_temp_c = st.selectbox(
+        "Absorption chiller evaporator temperature (°C)",
+        ABSORPTION_EVAP_OPTIONS,
+        index=1,
+        help="Available fitted COP curves are for T_evap = -10, -5, and 0 °C."
+    )
+else:
+    abs_evap_temp_c = None
 
 temp = st.number_input("Waste heat temperature (°C)", value=float(default_temp))
 asic = st.checkbox("ASIC chips (+5°C)")
@@ -439,29 +500,51 @@ with col1:
         pue_override_value = None
 
 with col2:
-    if application == "ORC":
-        effective_temp_preview = float(temp) + (5.0 if asic else 0.0)
-        eta_preview = get_eta(effective_temp_preview, application)
-        eta_preview_percent = float(eta_preview * 100.0) if eta_preview is not None else 1.0
+    if application in ["ORC", "Cold water generation using an absorption chiller"]:
+        preview_primary_temp = float(temp) + (5.0 if asic else 0.0)
 
-        eta_override_enabled = st.checkbox("Override offtaker efficiency")
+        eta_preview = get_offtaker_performance(
+            preview_primary_temp,
+            application,
+            abs_evap_temp_c=abs_evap_temp_c
+        ) if preview_primary_temp is not None else 0.0
+
+        eta_override_enabled = st.checkbox("Override offtaker performance")
+
+        if application == "ORC":
+            default_manual_value = float(eta_preview * 100.0)
+            label_text = "Manual ORC efficiency (%)"
+            min_val = 0.0
+            max_val = 100.0
+            step_val = 0.1
+            format_val = "%.2f"
+        else:
+            default_manual_value = float(eta_preview)
+            label_text = "Manual absorption chiller COP"
+            min_val = 0.0
+            max_val = 10.0
+            step_val = 0.01
+            format_val = "%.4f"
 
         if eta_override_enabled:
-            eta_override_percent = st.number_input(
-                "Manual offtaker efficiency (%)",
-                min_value=0.0,
-                max_value=100.0,
-                value=eta_preview_percent,
-                step=0.1,
-                format="%.2f",
+            manual_value = st.number_input(
+                label_text,
+                min_value=min_val,
+                max_value=max_val,
+                value=default_manual_value,
+                step=step_val,
+                format=format_val,
             )
-            eta_override_value = eta_override_percent / 100.0
+
+            if application == "ORC":
+                eta_override_value = manual_value / 100.0
+            else:
+                eta_override_value = manual_value
         else:
             eta_override_value = None
     else:
         eta_override_enabled = False
         eta_override_value = None
-        st.info("Offtaker efficiency override is only used for ORC.")
 
 # -----------------------------
 # Validation
@@ -487,6 +570,7 @@ outputs = calculate_outputs(
     pue_override_value=pue_override_value,
     eta_override_enabled=eta_override_enabled,
     eta_override_value=eta_override_value,
+    abs_evap_temp_c=abs_evap_temp_c,
 )
 
 # -----------------------------
@@ -503,10 +587,11 @@ selected_inputs_df = pd.DataFrame([{
     "User-entered waste heat temperature (°C)": temp,
     "ASIC checked": asic,
     "Effective waste heat temperature (°C)": outputs["effective_temp"],
+    "Absorption chiller evaporator temperature (°C)": outputs["abs_evap_temp_c"],
     "Q_avail factor": outputs["Qavail"],
     "Used waste heat fraction (%)": outputs["phi_use"] * 100,
     "PUE source": outputs["PUE source"],
-    "Efficiency source": outputs["eta_source"],
+    "Performance source": outputs["eta_source"],
 }])
 st.dataframe(selected_inputs_df, use_container_width=True)
 
@@ -526,11 +611,34 @@ if application == "ORC":
         "Q_avail": outputs["Qavail"],
         "Pwh,avail (normalized)": outputs["Pwh_avail"],
         "Pwh,use (normalized)": outputs["Pwh_use"],
+        "Total heat to offtaker (normalized)": outputs["Ptotal_offtaker"],
+        "Offtaker inlet temperature (°C)": outputs["Tofftaker_in"],
         "ORC efficiency used": outputs["eta_used"],
         "ORC electrical output (normalized)": outputs["PORC"],
         "ERF mean": outputs["ERF mean"],
         "ERE mean": outputs["ERE mean"],
     }])
+
+elif application == "Cold water generation using an absorption chiller":
+    results_df = pd.DataFrame([{
+        "Cooling system type": case_label,
+        "State": state,
+        "County": county,
+        "Climate zone": row["climate zone"],
+        "PUE file value": outputs["PUE file value"],
+        "PUE used": outputs["PUE mean"],
+        "Q_avail": outputs["Qavail"],
+        "Pwh,avail (normalized)": outputs["Pwh_avail"],
+        "Pwh,use (normalized)": outputs["Pwh_use"],
+        "Total heat to offtaker (normalized)": outputs["Ptotal_offtaker"],
+        "Offtaker inlet temperature (°C)": outputs["Tofftaker_in"],
+        "Absorption chiller evaporator temperature (°C)": outputs["abs_evap_temp_c"],
+        "Absorption chiller COP used": outputs["COP_abs"],
+        "Chilled water output (normalized)": outputs["Q_chilled"],
+        "ERF mean": outputs["ERF mean"],
+        "ERE mean": outputs["ERE mean"],
+    }])
+
 else:
     results_df = pd.DataFrame([{
         "Cooling system type": case_label,
@@ -577,18 +685,27 @@ with c3:
     )
 
 with c4:
-    st.metric(
-        "ORC Power",
-        f"{outputs['PORC']:.4f}" if outputs["PORC"] is not None else "N/A",
-        help="Normalized ORC electrical output. This is reported separately and does not define ERF or ERE."
-    )
+    if application == "ORC":
+        st.metric(
+            "ORC Power",
+            f"{outputs['PORC']:.4f}" if outputs["PORC"] is not None else "N/A",
+            help="Normalized ORC electrical output. This is reported separately and does not define ERF or ERE."
+        )
+    elif application == "Cold water generation using an absorption chiller":
+        st.metric(
+            "Chilled Water Output",
+            f"{outputs['Q_chilled']:.4f}" if outputs["Q_chilled"] is not None else "N/A",
+            help="Normalized chilled-water generation estimated as COP_abs × heat sent to the absorption chiller."
+        )
+    else:
+        st.metric("Useful Output", "N/A")
 
 # -----------------------------
 # Metric Explanations
 # -----------------------------
 st.subheader("Metric Explanations")
 
-metric_explanations_df = pd.DataFrame([
+metric_explanations_rows = [
     {
         "Metric": "PUE",
         "Short description": "Total data center power divided by IT power.",
@@ -603,14 +720,23 @@ metric_explanations_df = pd.DataFrame([
         "Metric": "ERE",
         "Short description": "Adjusted effectiveness after subtracting reused data center heat.",
         "How to interpret": "Lower is generally better."
-    },
-    {
-        "Metric": "ORC Power",
-        "Short description": "Electrical output from the ORC using reused waste heat.",
-        "How to interpret": "Useful output, but separate from ERF and ERE."
     }
-])
+]
 
+if application == "ORC":
+    metric_explanations_rows.append({
+        "Metric": "ORC Power",
+        "Short description": "Electrical output from the ORC using total heat sent to the offtaker.",
+        "How to interpret": "Useful output, but separate from ERF and ERE."
+    })
+elif application == "Cold water generation using an absorption chiller":
+    metric_explanations_rows.append({
+        "Metric": "Chilled Water Output",
+        "Short description": "Cooling output from the absorption chiller using total heat sent to the offtaker.",
+        "How to interpret": "Higher means more cold-water generation."
+    })
+
+metric_explanations_df = pd.DataFrame(metric_explanations_rows)
 st.dataframe(metric_explanations_df, use_container_width=True)
 
 # -----------------------------
@@ -629,12 +755,16 @@ notes = {
     "Used waste heat fraction (phi_use)": f"{outputs['phi_use']:.4f}",
     "Pwh,avail (normalized)": f"{outputs['Pwh_avail']:.4f}",
     "Pwh,use (normalized)": f"{outputs['Pwh_use']:.4f}",
+    "Total heat to offtaker (normalized)": f"{outputs['Ptotal_offtaker']:.4f}",
     "ERF": f"{outputs['ERF mean']:.4f}",
     "ERE": f"{outputs['ERE mean']:.4f}",
 }
 
 if application == "ORC":
-    notes["Efficiency source"] = outputs["eta_source"]
+    notes["Offtaker inlet temperature (°C)"] = (
+        f"{outputs['Tofftaker_in']:.2f}" if outputs["Tofftaker_in"] is not None else "N/A"
+    )
+    notes["Performance source"] = outputs["eta_source"]
     notes["Efficiency used"] = f"{outputs['eta_used']:.4f} ({outputs['eta_used'] * 100:.2f}%)"
     if outputs["eta_model"] is not None:
         notes["Internal ORC model efficiency"] = (
@@ -642,10 +772,21 @@ if application == "ORC":
         )
     notes["ORC electrical output (normalized)"] = f"{outputs['PORC']:.4f}"
 
+elif application == "Cold water generation using an absorption chiller":
+    notes["Offtaker inlet temperature (°C)"] = (
+        f"{outputs['Tofftaker_in']:.2f}" if outputs["Tofftaker_in"] is not None else "N/A"
+    )
+    notes["Absorption chiller evaporator temperature (°C)"] = outputs["abs_evap_temp_c"]
+    notes["Performance source"] = outputs["eta_source"]
+    notes["Absorption chiller COP used"] = f"{outputs['COP_abs']:.4f}"
+    if outputs["eta_model"] is not None:
+        notes["Internal absorption chiller COP model"] = f"{outputs['eta_model']:.4f}"
+    notes["Chilled water output (normalized)"] = f"{outputs['Q_chilled']:.4f}"
+
 st.dataframe(pd.DataFrame([notes]), use_container_width=True)
 
 st.caption(
     "This version uses P_IT as the base for data-center waste heat recovery. "
     "ERF and ERE are calculated from reused data-center waste heat only. "
-    "ORC electrical output is reported separately and does not define ERF or ERE."
+    "The selected offtaker output (ORC power or chilled-water generation) is calculated from the reused data-center waste heat."
 )
