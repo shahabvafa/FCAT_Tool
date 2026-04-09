@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title='FCAT Waste Heat Reuse Demo - V5', layout='wide')
+st.set_page_config(page_title='FCAT Waste Heat Reuse Demo - V4', layout='wide')
 
 st.title('FCAT Waste Heat Reuse Demo')
 st.markdown('Select cooling system type, state, county, and offtaker application.')
@@ -79,7 +79,7 @@ CASE_METADATA = {
         'short_description': 'Midsize data center using an air-cooled chiller without economizer.'
     },
     8: {
-        'label': 'Case 8 - Small - Water-cooled chiller',
+        'label': 'Case 8 - Small - Water cooled chiller',
         'default_temp_c': 45.0,
         'size': 'Small',
         'heat_removal': 'Mechanical cooling',
@@ -119,7 +119,7 @@ CASE_METADATA = {
         'short_description': 'Large data center with airside economizer and air-cooled chiller.'
     },
     12: {
-        'label': 'Case 12 - Large - Water-cooled chiller + dry cooling tower + free cooling',
+        'label': 'Case 12 - Large - Water cooled chiller + dry cooling tower + free cooling',
         'default_temp_c': 45.0,
         'size': 'Large',
         'heat_removal': 'Free cooling + dry cooling tower',
@@ -129,7 +129,7 @@ CASE_METADATA = {
         'short_description': 'Large data center using water-cooled chiller, dry cooling tower, and free cooling.'
     },
     13: {
-        'label': 'Case 13 - Large - Immersion + Air-cooled chiller + free cooling',
+        'label': 'Case 13 - Large - Immersion + Air cooled chiller + free cooling',
         'default_temp_c': 55.0,
         'size': 'Large',
         'heat_removal': 'Immersion cooling',
@@ -139,7 +139,7 @@ CASE_METADATA = {
         'short_description': 'Large data center with immersion cooling, air-cooled chiller, and free cooling.'
     },
     14: {
-        'label': 'Case 14 - Large - Cold-Plate + Air-cooled chiller + free cooling',
+        'label': 'Case 14 - Large - Cold-Plate + Air cooled chiller + free cooling',
         'default_temp_c': 50.0,
         'size': 'Large',
         'heat_removal': 'Cold-plate cooling',
@@ -155,8 +155,7 @@ APPLICATION_OPTIONS = [
     'Cold water generation using an absorption chiller (not used)',
 ]
 
-# Interpreted as Q_avail relative to P_IT
-Q_AVAIL_FACTOR = {
+RECOVERABLE_HEAT_FACTOR = {
     1: 0.80,
     2: 0.80,
     3: 0.75,
@@ -181,8 +180,11 @@ def normalize_text(x):
 def eta_use_orc(T_C):
     """
     ORC efficiency from a 2nd-order polynomial fit to the digitized eta curve.
+    Used internally unless user overrides the value.
     """
     T_C = np.asarray(T_C, dtype=float)
+
+    # Keep temperatures inside fitted data range
     T_C = np.clip(T_C, 42.7314, 84.3096)
 
     a = -9.77832291e-04
@@ -230,6 +232,7 @@ def load_pue_table(file_path):
     df['cooling system type'] = pd.to_numeric(df['cooling system type'], errors='coerce').astype('Int64')
     df['PUE mean'] = pd.to_numeric(df['PUE mean'], errors='coerce')
 
+    # Keep rows even if PUE mean is empty, so all states/counties still appear
     df = df.dropna(subset=['State', 'County', 'cooling system type'])
 
     df['_state_norm'] = df['State'].apply(normalize_text)
@@ -247,32 +250,19 @@ def get_counties_for_state(df, selected_state):
     return sorted(filtered['County'].dropna().astype(str).unique())
 
 
-def weighted_temperature(primary_heat, primary_temp, secondary_heat, secondary_temp):
-    total_heat = primary_heat + secondary_heat
-    if total_heat <= 0:
-        return None
-    return ((primary_heat * primary_temp) + (secondary_heat * secondary_temp)) / total_heat
-
-
 def calculate_outputs(
     case_num,
     row,
     application,
     temp,
     asic,
-    phi_use=1.0,
-    secondary_enabled=False,
-    secondary_heat_fraction=0.0,
-    secondary_temp_c=60.0,
     pue_override_enabled=False,
     pue_override_value=None,
     eta_override_enabled=False,
     eta_override_value=None,
 ):
-    # normalized basis
-    p_it = 1.0
-
     effective_temp = float(temp)
+
     if asic:
         effective_temp += 5.0
 
@@ -285,68 +275,38 @@ def calculate_outputs(
         pue = pue_from_file
         pue_source = "Input file"
 
-    q_avail = Q_AVAIL_FACTOR[case_num]
-
-    # Data center heat recovery formulation
-    p_dc = pue * p_it
-    p_wh_avail = q_avail * p_it
-    p_wh_use = phi_use * p_wh_avail
-
-    # ERF and ERE are based only on data center reused heat
-    erf = p_wh_use / p_dc
-    ere = (p_dc - p_wh_use) / p_it
-
-    # Optional secondary heat source for offtaker model only
-    p_secondary = secondary_heat_fraction * p_it if secondary_enabled else 0.0
-    t_secondary = float(secondary_temp_c) if secondary_enabled else None
-
-    p_total_to_offtaker = p_wh_use + p_secondary
-    t_offtaker_in = weighted_temperature(
-        primary_heat=p_wh_use,
-        primary_temp=effective_temp,
-        secondary_heat=p_secondary,
-        secondary_temp=t_secondary if t_secondary is not None else effective_temp,
-    )
+    f_case = RECOVERABLE_HEAT_FACTOR[case_num]
 
     if application == 'ORC':
+        eta_model = get_eta(effective_temp, application)
+
         if eta_override_enabled:
             eta = float(eta_override_value)
             eta_source = "Manual override"
-            eta_model = get_eta(t_offtaker_in, application) if t_offtaker_in is not None else None
         else:
-            eta_model = get_eta(t_offtaker_in, application) if t_offtaker_in is not None else 0.0
             eta = eta_model
             eta_source = "Internal ORC model"
 
-        p_orc = eta * p_total_to_offtaker
+        erf = (eta * f_case) / pue
+        ere = pue - (eta * f_case)
     else:
         eta_model = None
         eta = None
         eta_source = "Not used"
-        p_orc = None
+        erf = None
+        ere = None
 
     return {
-        'PIT': p_it,
-        'PDC': p_dc,
         'PUE mean': pue,
         'PUE source': pue_source,
         'PUE file value': pue_from_file,
-        'Qavail': q_avail,
-        'phi_use': phi_use,
-        'Pwh_avail': p_wh_avail,
-        'Pwh_use': p_wh_use,
         'ERF mean': erf,
         'ERE mean': ere,
         'effective_temp': effective_temp,
-        'secondary_enabled': secondary_enabled,
-        'Psecondary': p_secondary,
-        'Tsecondary': t_secondary,
-        'Ptotal_offtaker': p_total_to_offtaker,
-        'Tofftaker_in': t_offtaker_in,
+        'f_case': f_case,
         'eta_model': eta_model,
         'eta_used': eta,
         'eta_source': eta_source,
-        'PORC': p_orc,
     }
 
 
@@ -369,6 +329,7 @@ except Exception as e:
 # -----------------------------
 st.subheader("Inputs")
 
+# 1) Cooling system type
 case_label = st.selectbox(
     "Cooling system type",
     [CASE_METADATA[k]['label'] for k in CASE_METADATA],
@@ -379,6 +340,7 @@ case_num = int(case_label.split("-")[0].replace("Case", "").strip())
 default_temp = CASE_METADATA[case_num]['default_temp_c']
 case_info = CASE_METADATA[case_num]
 
+# 2) State
 states = get_states(df)
 if not states:
     st.warning("No states found in the input file.")
@@ -386,6 +348,7 @@ if not states:
 
 state = st.selectbox("State", states)
 
+# 3) County
 counties = get_counties_for_state(df, state)
 if not counties:
     st.warning("No counties found for the selected state.")
@@ -393,53 +356,19 @@ if not counties:
 
 county = st.selectbox("County", counties)
 
+# 4) Offtaker
 application = st.selectbox("Offtaker", APPLICATION_OPTIONS)
 
+# Extra inputs
 temp = st.number_input("Waste heat temperature (°C)", value=float(default_temp))
 asic = st.checkbox("ASIC chips (+5°C)")
 
-phi_use_percent = st.slider(
-    "Used fraction of available waste heat (%)",
-    min_value=0,
-    max_value=100,
-    value=100,
-    step=5,
-    help="Fraction of available data-center waste heat that is actually reused."
-)
-phi_use = phi_use_percent / 100.0
-
-# Secondary heat source
-st.subheader("Optional Secondary Heat Source")
-secondary_enabled = st.checkbox(
-    "Include secondary heat source",
-    help="Additional non-data-center heat input sent to the offtaker. This affects offtaker input and ORC power, but not ERF or ERE."
-)
-
-if secondary_enabled:
-    col_s1, col_s2 = st.columns(2)
-    with col_s1:
-        secondary_heat_fraction = st.number_input(
-            "Secondary heat amount (normalized to P_IT)",
-            min_value=0.0,
-            value=0.10,
-            step=0.05,
-            format="%.4f",
-        )
-    with col_s2:
-        secondary_temp_c = st.number_input(
-            "Secondary source temperature (°C)",
-            value=60.0,
-            step=1.0,
-            format="%.2f",
-        )
-else:
-    secondary_heat_fraction = 0.0
-    secondary_temp_c = 60.0
-
 # -----------------------------
-# Case details
+# Case details (Request 5)
 # -----------------------------
 st.subheader("Cooling System Case Details")
+
+st.caption("Additional details for the selected cooling system case.")
 
 case_details_df = pd.DataFrame([{
     "Case": f"Case {case_num}",
@@ -449,14 +378,14 @@ case_details_df = pd.DataFrame([{
     "Economizer type": case_info["economizer"],
     "Liquid cooling": case_info["liquid_cooling"],
     "Recommended waste heat temperature (°C)": case_info["default_temp_c"],
-    "Q_avail factor": Q_AVAIL_FACTOR[case_num],
+    "Recoverable heat factor (f_case)": RECOVERABLE_HEAT_FACTOR[case_num],
 }])
 
 st.dataframe(case_details_df, use_container_width=True)
 st.info(case_info["short_description"])
 
 # -----------------------------
-# Find matching row
+# Find matching row directly
 # -----------------------------
 matched = df[
     (df['_state_norm'] == normalize_text(state)) &
@@ -494,17 +423,8 @@ with col1:
 
 with col2:
     if application == "ORC":
-        preview_primary_temp = float(temp) + (5.0 if asic else 0.0)
-        preview_primary_heat = phi_use * Q_AVAIL_FACTOR[case_num]
-        preview_secondary_heat = secondary_heat_fraction if secondary_enabled else 0.0
-        preview_offtaker_temp = weighted_temperature(
-            primary_heat=preview_primary_heat,
-            primary_temp=preview_primary_temp,
-            secondary_heat=preview_secondary_heat,
-            secondary_temp=secondary_temp_c if secondary_enabled else preview_primary_temp,
-        )
-
-        eta_preview = get_eta(preview_offtaker_temp, application) if preview_offtaker_temp is not None else 0.0
+        effective_temp_preview = float(temp) + (5.0 if asic else 0.0)
+        eta_preview = get_eta(effective_temp_preview, application)
         eta_preview_percent = float(eta_preview * 100.0) if eta_preview is not None else 1.0
 
         eta_override_enabled = st.checkbox("Override offtaker efficiency")
@@ -545,10 +465,6 @@ outputs = calculate_outputs(
     application=application,
     temp=temp,
     asic=asic,
-    phi_use=phi_use,
-    secondary_enabled=secondary_enabled,
-    secondary_heat_fraction=secondary_heat_fraction,
-    secondary_temp_c=secondary_temp_c,
     pue_override_enabled=pue_override_enabled,
     pue_override_value=pue_override_value,
     eta_override_enabled=eta_override_enabled,
@@ -569,11 +485,7 @@ selected_inputs_df = pd.DataFrame([{
     "User-entered waste heat temperature (°C)": temp,
     "ASIC checked": asic,
     "Effective waste heat temperature (°C)": outputs["effective_temp"],
-    "Q_avail factor": outputs["Qavail"],
-    "Used waste heat fraction (%)": outputs["phi_use"] * 100,
-    "Secondary heat source enabled": outputs["secondary_enabled"],
-    "Secondary heat amount (normalized to P_IT)": outputs["Psecondary"],
-    "Secondary source temperature (°C)": outputs["Tsecondary"],
+    "Recoverable heat factor (f_case)": outputs["f_case"],
     "PUE source": outputs["PUE source"],
     "Efficiency source": outputs["eta_source"],
 }])
@@ -592,14 +504,7 @@ if application == "ORC":
         "Climate zone": row["climate zone"],
         "PUE file value": outputs["PUE file value"],
         "PUE used": outputs["PUE mean"],
-        "Q_avail": outputs["Qavail"],
-        "Pwh,avail (normalized)": outputs["Pwh_avail"],
-        "Pwh,use (normalized)": outputs["Pwh_use"],
-        "Secondary heat (normalized)": outputs["Psecondary"],
-        "Total heat to offtaker (normalized)": outputs["Ptotal_offtaker"],
-        "Offtaker inlet temperature (°C)": outputs["Tofftaker_in"],
-        "ORC efficiency used": outputs["eta_used"],
-        "ORC electrical output (normalized)": outputs["PORC"],
+        "Efficiency used": outputs["eta_used"],
         "ERF mean": outputs["ERF mean"],
         "ERE mean": outputs["ERE mean"],
     }])
@@ -611,75 +516,60 @@ else:
         "Climate zone": row["climate zone"],
         "PUE file value": outputs["PUE file value"],
         "PUE used": outputs["PUE mean"],
-        "Q_avail": outputs["Qavail"],
-        "Pwh,avail (normalized)": outputs["Pwh_avail"],
-        "Pwh,use (normalized)": outputs["Pwh_use"],
-        "ERF mean": outputs["ERF mean"],
-        "ERE mean": outputs["ERE mean"],
+        "ERF mean": "Not used",
+        "ERE mean": "Not used",
     }])
 
 st.dataframe(results_df, use_container_width=True)
 
 # -----------------------------
-# Metrics
+# Metrics (Request 6)
 # -----------------------------
 st.subheader("Metrics")
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3 = st.columns(3)
 
 with c1:
     st.metric(
         "PUE",
         f"{outputs['PUE mean']:.4f}",
-        help="Power Usage Effectiveness = total data center power / IT power."
+        help="Power Usage Effectiveness (PUE) = Total facility energy / IT energy. Lower values indicate better overall data center energy performance."
     )
 
 with c2:
     st.metric(
         "ERF",
-        f"{outputs['ERF mean']:.4f}",
-        help="Energy Reuse Factor = reused data center waste heat / total data center power."
+        f"{outputs['ERF mean']:.4f}" if outputs["ERF mean"] is not None else "N/A",
+        help="Energy Reuse Factor (ERF) is the fraction of total data center energy that is recovered and reused. Higher values are generally better."
     )
 
 with c3:
     st.metric(
         "ERE",
-        f"{outputs['ERE mean']:.4f}",
-        help="Energy Reuse Effectiveness = (total data center power - reused waste heat) / IT power."
-    )
-
-with c4:
-    st.metric(
-        "ORC Power",
-        f"{outputs['PORC']:.4f}" if outputs["PORC"] is not None else "N/A",
-        help="Normalized ORC electrical output. This is reported separately and does not define ERF or ERE."
+        f"{outputs['ERE mean']:.4f}" if outputs["ERE mean"] is not None else "N/A",
+        help="Energy Reuse Effectiveness (ERE) adjusts PUE by accounting for recovered energy. Lower values are generally better."
     )
 
 # -----------------------------
-# Metric Explanations
+# Quick metric explanations
 # -----------------------------
 st.subheader("Metric Explanations")
 
 metric_explanations_df = pd.DataFrame([
     {
         "Metric": "PUE",
-        "Short description": "Total data center power divided by IT power.",
-        "How to interpret": "Lower is generally better."
+        "Short description": "Total facility energy divided by IT energy.",
+        "How to interpret": "Lower is better."
     },
     {
         "Metric": "ERF",
-        "Short description": "Reused data center waste heat divided by total data center power.",
-        "How to interpret": "Higher means more data center heat is being reused."
+        "Short description": "Fraction of total data center energy that is recovered and reused.",
+        "How to interpret": "Higher is better."
     },
     {
         "Metric": "ERE",
-        "Short description": "Adjusted effectiveness after subtracting reused data center heat.",
-        "How to interpret": "Lower is generally better."
-    },
-    {
-        "Metric": "ORC Power",
-        "Short description": "Electrical output from the ORC using total heat sent to the offtaker.",
-        "How to interpret": "Useful output, but separate from ERF and ERE."
+        "Short description": "Adjusted PUE after accounting for recovered/reused energy.",
+        "How to interpret": "Lower is better."
     }
 ])
 
@@ -697,34 +587,20 @@ notes = {
         if outputs["PUE file value"] is not None else "Missing"
     ),
     "PUE used": f"{outputs['PUE mean']:.4f}",
-    "Q_avail factor": f"{outputs['Qavail']:.4f}",
-    "Used waste heat fraction (phi_use)": f"{outputs['phi_use']:.4f}",
-    "Pwh,avail (normalized)": f"{outputs['Pwh_avail']:.4f}",
-    "Pwh,use (normalized)": f"{outputs['Pwh_use']:.4f}",
-    "Secondary heat included": str(outputs["secondary_enabled"]),
-    "Secondary heat amount (normalized)": f"{outputs['Psecondary']:.4f}",
-    "Total heat to offtaker (normalized)": f"{outputs['Ptotal_offtaker']:.4f}",
-    "ERF": f"{outputs['ERF mean']:.4f}",
-    "ERE": f"{outputs['ERE mean']:.4f}",
 }
 
 if application == "ORC":
-    notes["Offtaker inlet temperature (°C)"] = (
-        f"{outputs['Tofftaker_in']:.2f}" if outputs["Tofftaker_in"] is not None else "N/A"
-    )
     notes["Efficiency source"] = outputs["eta_source"]
     notes["Efficiency used"] = f"{outputs['eta_used']:.4f} ({outputs['eta_used'] * 100:.2f}%)"
     if outputs["eta_model"] is not None:
         notes["Internal ORC model efficiency"] = (
             f"{outputs['eta_model']:.4f} ({outputs['eta_model'] * 100:.2f}%)"
         )
-    notes["ORC electrical output (normalized)"] = f"{outputs['PORC']:.4f}"
 
 st.dataframe(pd.DataFrame([notes]), use_container_width=True)
 
 st.caption(
-    "This version uses P_IT as the base for data-center waste heat recovery. "
-    "ERF and ERE are calculated from reused data-center waste heat only. "
-    "Optional secondary heat can be added to the offtaker model and affects the ORC power estimate, "
-    "but it does not change ERF or ERE."
+    "PUE is normally read from the state/county input file for the selected cooling system type, "
+    "unless the user overrides it. For ORC, offtaker efficiency is normally taken from the internal "
+    "ORC efficiency model, unless the user overrides it."
 )
