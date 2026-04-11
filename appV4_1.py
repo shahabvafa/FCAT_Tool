@@ -119,14 +119,14 @@ CASE_METADATA = {
         'short_description': 'Large data center with airside economizer and air-cooled chiller.'
     },
     12: {
-        'label': 'Case 12 - Large - Water-cooled chiller + dry cooling tower + free cooling',
+        'label': 'Case 12 - Large -Cold Plate + Water-cooled chiller + dry cooling tower + free cooling + 25% CRAC',
         'default_temp_c': 45.0,
         'size': 'Large',
-        'heat_removal': 'Free cooling + dry cooling tower',
+        'heat_removal': 'Free cooling + dry cooling tower + Cold Plate',
         'chiller': 'Water-cooled chiller',
         'economizer': 'Free cooling',
         'liquid_cooling': 'No',
-        'short_description': 'Large data center using water-cooled chiller, dry cooling tower, and free cooling.'
+        'short_description': 'Large data center using Cold Plate, water-cooled chiller, dry cooling tower, and free cooling + 25% CRAC.'
     },
     13: {
         'label': 'Case 13 - Large - Immersion + Air-cooled chiller + free cooling',
