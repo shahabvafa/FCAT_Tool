@@ -19,7 +19,7 @@ CASE_METADATA = {
     9: {'label': 'Case 9 - Small - Air-cooled chiller', 'default_temp_c': 45.0},
     10: {'label': 'Case 10 - Small - Direct expansion (DX) system', 'default_temp_c': 45.0},
     11: {'label': 'Case 11 - Large - Airside economizer + (air-cooled chiller)', 'default_temp_c': 45.0},
-    12: {'label': 'Case 12 - Large - Water cooled chiler + dry cooling tower + free cooling', 'default_temp_c': 45.0},
+    12: {'label': 'Case 12 - Large -Cold Plate + Water-cooled chiller + dry cooling tower + free cooling + 25% CRAC', 'default_temp_c': 45.0},
     13: {'label': 'Case 13 - Large - Immersion + Air coold chiler + free coling', 'default_temp_c': 55.0},
     14: {'label': 'Case 14 - Large - Cold-Plate + Air coold chiler + free coling', 'default_temp_c': 50.0},
 }
