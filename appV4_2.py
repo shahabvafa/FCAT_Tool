@@ -380,7 +380,7 @@ def calculate_outputs(
 # -----------------------------
 # File input
 # -----------------------------
-data_file = st.sidebar.text_input("PUE data file (.csv or .xlsx)", "based_on_state_county.csv")
+data_file = st.sidebar.text_input("PUE data file (.csv or .xlsx)", "based_on_state_countiy.csv")
 
 try:
     df = load_pue_table(data_file)
