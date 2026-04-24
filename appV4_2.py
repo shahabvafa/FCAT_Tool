@@ -129,7 +129,7 @@ CASE_METADATA = {
         'short_description': 'Large data center using Cold Plate, water-cooled chiller, dry cooling tower, and free cooling + 25% CRAC.'
     },
     13: {
-        'label': 'Case 13 - Large - Immersion + Air-cooled chiller + free cooling',
+        'label': 'Case 13 - Large - Immersion + Water-cooled chiller + dry cooling tower + free cooling',
         'default_temp_c': 55.0,
         'size': 'Large',
         'heat_removal': 'Immersion cooling',
