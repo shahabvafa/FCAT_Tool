@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
+# -------------------------------------------------------------------
+# Page setup
+# -------------------------------------------------------------------
 st.set_page_config(page_title="FCAT Waste Heat Reuse Demo - V6", layout="wide")
 
 st.title("FCAT Waste Heat Reuse Demo")
@@ -156,8 +159,6 @@ CASE_METADATA = {
     },
 }
 
-
-# Active offtaker applications.
 APPLICATION_OPTIONS = [
     "ORC",
     "Cold water generation using an absorption chiller",
@@ -166,18 +167,16 @@ APPLICATION_OPTIONS = [
 
 ABSORPTION_EVAP_OPTIONS = [-10, -5, 0]
 
-# Conversion factor requested by advisor:
-# Convert absorption chiller cooling output from thermal kWh to electric-equivalent kWh
-# using a typical DX chiller COP of 3.0.
+# Advisor-requested conversion factor:
+# This is NOT the absorption chiller COP.
+# It is only used to convert cooling thermal output to electric-equivalent output.
 DX_CHILLER_COP = 3.0
 
 # Heat pump COP model for waste heat boosting.
-# Based on a high-temperature industrial heat pump correlation using temperature lift:
-# COP_HP = 52.94 * (DeltaT_lift)^(-0.716)
-# where DeltaT_lift = T_boosted - T_available in K. Since this is a temperature
-# difference, K and °C have the same numerical value.
-HP_COP_MODEL_NAME = "Bever et al. (2024) HTHP temperature-lift correlation"
+# COP_HP = 52.94 * (DeltaT_lift)^(-0.716), where DeltaT_lift = T_boosted - T_available.
+HP_COP_MODEL_NAME = "Bever et al. (2024) high-temperature heat pump temperature-lift correlation"
 
+# Fraction of IT heat assumed available for reuse for each cooling system case.
 Q_AVAIL_FACTOR = {
     1: 0.80,
     2: 0.80,
@@ -195,14 +194,18 @@ Q_AVAIL_FACTOR = {
     14: 0.85,
 }
 
-
-URE_FORMULATIONS_AVAILABLE = {
-    "ORC": "Active",
-    "Cold water generation using an absorption chiller": "Active",
-    "Water reclamation": "Active using Case B DWSF and SWI mapped by climate zone",
-    "Carbon capture and storage": "Future formulation only - requires CO2 removal model",
+WR_CASE_COLUMN_MAP = {
+    "A": {
+        "WRE": "WR_CaseA_WRE_g_per_kJ",
+        "DWF": "WR_CaseA_DWF_L_per_kWh",
+        "DWSF": "WR_CaseA_DWSF_L_per_kWh",
+    },
+    "B": {
+        "WRE": "WR_CaseB_WRE_g_per_kJ",
+        "DWF": "WR_CaseB_DWF_L_per_kWh",
+        "DWSF": "WR_CaseB_DWSF_L_per_kWh",
+    },
 }
-
 
 # -------------------------------------------------------------------
 # Helper functions
@@ -222,7 +225,6 @@ def eta_use_orc(T_C):
 
     eta_percent = a * T_C**2 + b * T_C + c
     eta_percent = np.clip(eta_percent, 0.0, None)
-
     return eta_percent / 100.0
 
 
@@ -256,15 +258,13 @@ def get_offtaker_performance(T_avail_C, application, abs_evap_temp_c=None):
 
 def heat_pump_cop_heating(T_in_C, T_out_C):
     """
-    Estimate heating-mode heat pump COP using an industrial high-temperature
-    heat pump correlation based on temperature lift.
+    Heating-mode heat pump COP for waste heat boosting.
 
-    Bever et al. (2024):
-        COP_HP = 52.94 * (DeltaT_lift)^(-0.716)
+    T_in_C: available waste heat temperature going into the booster.
+    T_out_C: selected boosted temperature delivered to the offtaker.
 
-    DeltaT_lift is the temperature difference between the boosted/sink
-    temperature and the available/source temperature. Because this is a
-    temperature difference, Delta °C = Delta K.
+    COP_HP = 52.94 * (DeltaT_lift)^(-0.716)
+    DeltaT_lift = T_out_C - T_in_C.
     """
     delta_t_lift = float(T_out_C) - float(T_in_C)
 
@@ -273,29 +273,23 @@ def heat_pump_cop_heating(T_in_C, T_out_C):
 
     cop_hp = 52.94 * (delta_t_lift ** -0.716)
 
-    # Heating COP must be greater than 1 for the booster energy calculation.
-    # If the estimated COP is too low, keep it just above 1 to avoid division by zero
-    # and to signal a very unfavorable boost condition through a large energy penalty.
+    # Heating COP must be above 1 to compute W = Q_waste / (COP_HP - 1).
     return max(float(cop_hp), 1.01)
 
-def calculate_heat_pump_boost(
-    p_wh_use,
-    T_in_C,
-    boost_enabled=False,
-    boosted_temp_c=None,
-):
+
+def calculate_heat_pump_boost(p_wh_use, T_in_C, boost_enabled=False, boosted_temp_c=None):
     """
-    Calculate heat pump boosting.
+    Waste heat boosting calculation.
 
     Without boost:
-        Q_heat_to_application = Pwh,use
         E_boost = 0
+        Q_heat_to_offtaker = Pwh,use
 
     With boost:
-        COP_H = Q_hot / W
-        Q_hot = Q_waste + W
-        W = Q_waste / (COP_H - 1)
-        Q_heat_to_application = Q_waste + W
+        COP_HP = Q_hot / W_HP
+        Q_hot = Q_waste + W_HP
+        W_HP = Q_waste / (COP_HP - 1)
+        Q_heat_to_offtaker = Q_waste + W_HP
     """
     p_wh_use = float(p_wh_use)
 
@@ -316,10 +310,9 @@ def calculate_heat_pump_boost(
     if float(boosted_temp_c) <= float(T_in_C):
         raise ValueError("Boosted temperature must be greater than the available waste heat temperature.")
 
-    cop_hp = heat_pump_cop_heating(
-        T_in_C=T_in_C,
-        T_out_C=boosted_temp_c,
-    )
+    cop_hp = heat_pump_cop_heating(T_in_C=T_in_C, T_out_C=boosted_temp_c)
+    if cop_hp is None or cop_hp <= 1.0:
+        raise ValueError("Heat pump COP must be greater than 1. Check boosted temperature selection.")
 
     e_boost = p_wh_use / (cop_hp - 1.0)
     q_heat_to_offtaker = p_wh_use + e_boost
@@ -335,77 +328,96 @@ def calculate_heat_pump_boost(
     }
 
 
+def get_water_reclamation_case(case_info):
+    """
+    Map FCAT cooling cases to Megan's water reclamation cases.
+
+    Current implementation uses IT-side liquid-cooling configuration:
+        - No IT-side liquid cooling -> Megan Case A
+        - Cold plate or immersion/hybrid IT cooling -> Megan Case B
+
+    This means water-cooled chiller cases without IT-side liquid cooling are mapped to Case A.
+    """
+    liquid_label = normalize_text(case_info.get("liquid_cooling", "No"))
+    if liquid_label.startswith("yes"):
+        return "B"
+    return "A"
+
+
 # -------------------------------------------------------------------
 # URE formulations
 # -------------------------------------------------------------------
 def calculate_ure_orc(e_elect, e_boost, e_it):
-    """
-    ORC end product: electric energy/power output.
-    URE_ORC = (E_elect - E_boost) / E_IT
-    """
-    return (e_elect - e_boost) / e_it
+    """URE_ORC = (electric output - boost electricity) / IT energy."""
+    return (float(e_elect) - float(e_boost)) / float(e_it)
 
 
 def calculate_ure_absorption(q_cooling_thermal, e_boost, e_it, dx_chiller_cop=DX_CHILLER_COP):
     """
-    Absorption chiller end product: cooling output.
+    Absorption chiller URE.
 
-    Advisor-requested conversion:
-    Convert cooling thermal output to electric-equivalent output using a typical DX chiller COP.
+    COP_absorption is used upstream to calculate Q_cooling_thermal.
+    COP_DX = 3.0 is only a conversion factor from thermal cooling to electric-equivalent benefit.
 
     URE_abs = ((Q_cooling_thermal / COP_DX) - E_boost) / E_IT
     """
+    q_cooling_thermal = float(q_cooling_thermal)
+    e_boost = float(e_boost)
+    e_it = float(e_it)
+    dx_chiller_cop = float(dx_chiller_cop)
+
     if dx_chiller_cop <= 0:
         raise ValueError("DX chiller COP must be greater than zero.")
+    if e_it <= 0:
+        raise ValueError("E_IT must be greater than zero.")
 
     cooling_electric_equivalent = q_cooling_thermal / dx_chiller_cop
-    return (cooling_electric_equivalent - e_boost) / e_it
+    ure_abs = (cooling_electric_equivalent - e_boost) / e_it
+    return ure_abs, cooling_electric_equivalent
 
 
-def calculate_ure_water_reclamation(
-    dwsf_l_per_kwh,
-    swi_l_per_kwh,
-    q_heat_to_application,
-    e_boost,
-    e_it,
-):
+def calculate_ure_water_reclamation(dwsf_l_per_kwh, swi_l_per_kwh, e_wr, e_it):
     """
-    Water reclamation end product: reduction in water scarcity footprint.
+    Water reclamation URE using the corrected formulation from unit analysis.
 
-    From Megan's Case B table:
-        DWSF is the change in water scarcity footprint in L/kWh.
+    Megan's normalized DWSF is interpreted as:
+        DWSF_Megan = Delta_WSF / E_WR
 
-    Apply DWSF to the heat delivered to the water-reclamation application, then add
-    the water-scarcity penalty associated with any additional heat-pump electricity.
+    where E_WR is the energy input to the water reclamation system.
+    In this app, E_WR is represented by heat pump boost electricity:
+        E_WR = E_boost
 
-        Delta_WSF_total = DWSF_CaseB * Q_heat_to_application + SWI * E_boost
-
-    Benefit is positive when Delta_WSF_total is negative.
-
+    Therefore:
+        Delta_WSF_total = DWSF_Megan * E_WR
         URE_water = -Delta_WSF_total / (SWI * E_IT)
+
+    Do NOT multiply DWSF directly by Q_heat_to_application here.
+    Do NOT add SWI * E_boost separately here, because that penalty is already included
+    in DWSF_Megan per unit E_WR.
     """
     dwsf_l_per_kwh = float(dwsf_l_per_kwh)
     swi_l_per_kwh = float(swi_l_per_kwh)
+    e_wr = float(e_wr)
+    e_it = float(e_it)
 
     if swi_l_per_kwh <= 0:
         raise ValueError("WR_SWI_L_per_kWh must be greater than zero.")
+    if e_it <= 0:
+        raise ValueError("E_IT must be greater than zero.")
+    if e_wr < 0:
+        raise ValueError("E_WR must be non-negative.")
 
-    delta_wsf_total = dwsf_l_per_kwh * q_heat_to_application + swi_l_per_kwh * e_boost
+    delta_wsf_total = dwsf_l_per_kwh * e_wr
     ure_water = -delta_wsf_total / (swi_l_per_kwh * e_it)
+    water_scarcity_benefit = -delta_wsf_total
 
-    return ure_water, delta_wsf_total
+    return ure_water, delta_wsf_total, water_scarcity_benefit
 
 
 def calculate_ure_carbon_future(m_co2_removed, cef, e_boost, e_it):
-    """
-    Future formulation only. Not active in the current UI.
-
-    Carbon capture end product: removed CO2 mass.
-    URE_CCS = ((m_CO2_removed / CEF) - E_boost) / E_IT
-    """
+    """Future placeholder: URE_CCS = ((m_CO2_removed / CEF) - E_boost) / E_IT."""
     if cef <= 0:
         raise ValueError("CEF must be greater than zero.")
-
     carbon_energy_equivalent = m_co2_removed / cef
     return (carbon_energy_equivalent - e_boost) / e_it
 
@@ -431,30 +443,50 @@ def load_pue_table(file_path):
         "climate zone",
         "PUE mean",
     ]
-
     missing = [c for c in expected_cols if c not in df.columns]
     if missing:
         raise ValueError("Missing required columns in input file: " + ", ".join(missing))
 
-    # Water reclamation columns are required only when the Water Reclamation offtaker is selected.
-    # If an older PUE file is used, the app still runs for ORC and absorption chiller.
-    for optional_col in ["WR_CaseB_DWSF_L_per_kWh", "WR_SWI_L_per_kWh"]:
-        if optional_col not in df.columns:
-            df[optional_col] = np.nan
+    optional_cols = [
+        "WR_reference_city",
+        "WR_reference_county",
+        "WR_EWIF_L_per_kWh",
+        "WR_AWARE_CF",
+        "WR_SWI_L_per_kWh",
+        "WR_CaseA_WRE_g_per_kJ",
+        "WR_CaseA_DWF_L_per_kWh",
+        "WR_CaseA_DWSF_L_per_kWh",
+        "WR_CaseB_WRE_g_per_kJ",
+        "WR_CaseB_DWF_L_per_kWh",
+        "WR_CaseB_DWSF_L_per_kWh",
+    ]
+    for col in optional_cols:
+        if col not in df.columns:
+            df[col] = np.nan
 
     df["State"] = df["State"].astype(str).str.strip()
     df["County"] = df["County"].astype(str).str.strip()
     df["climate zone"] = df["climate zone"].astype(str).str.strip()
     df["cooling system type"] = pd.to_numeric(df["cooling system type"], errors="coerce").astype("Int64")
     df["PUE mean"] = pd.to_numeric(df["PUE mean"], errors="coerce")
-    df["WR_CaseB_DWSF_L_per_kWh"] = pd.to_numeric(df["WR_CaseB_DWSF_L_per_kWh"], errors="coerce")
-    df["WR_SWI_L_per_kWh"] = pd.to_numeric(df["WR_SWI_L_per_kWh"], errors="coerce")
+
+    numeric_optional_cols = [
+        "WR_EWIF_L_per_kWh",
+        "WR_AWARE_CF",
+        "WR_SWI_L_per_kWh",
+        "WR_CaseA_WRE_g_per_kJ",
+        "WR_CaseA_DWF_L_per_kWh",
+        "WR_CaseA_DWSF_L_per_kWh",
+        "WR_CaseB_WRE_g_per_kJ",
+        "WR_CaseB_DWF_L_per_kWh",
+        "WR_CaseB_DWSF_L_per_kWh",
+    ]
+    for col in numeric_optional_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df = df.dropna(subset=["State", "County", "cooling system type"])
-
     df["_state_norm"] = df["State"].apply(normalize_text)
     df["_county_norm"] = df["County"].apply(normalize_text)
-
     return df
 
 
@@ -485,15 +517,12 @@ def calculate_outputs(
     eta_override_value=None,
     abs_evap_temp_c=None,
 ):
-    # Normalized IT load. Because p_it = 1.0, all power/energy values are normalized by IT load.
+    # Normalized IT load. Because P_IT = 1.0, all power/energy values are normalized by IT load.
     p_it = 1.0
 
-    effective_temp = float(temp)
-    if asic:
-        effective_temp += 5.0
+    effective_temp = float(temp) + (5.0 if asic else 0.0)
 
     pue_from_file = None if pd.isna(row["PUE mean"]) else float(row["PUE mean"])
-
     if pue_override_enabled:
         pue = float(pue_override_value)
         pue_source = "Manual override"
@@ -502,13 +531,11 @@ def calculate_outputs(
         pue_source = "Input file"
 
     q_avail = Q_AVAIL_FACTOR[case_num]
-
     p_dc = pue * p_it
     p_wh_avail = q_avail * p_it
     p_wh_use = phi_use * p_wh_avail
 
-    # ERF and ERE are based only on reused data-center waste heat.
-    # Heat pump electricity is handled separately in URE as a penalty.
+    # ERF and ERE are based on reused data-center waste heat before any heat-pump electricity addition.
     erf = p_wh_use / p_dc if p_dc != 0 else np.nan
     ere = (p_dc - p_wh_use) / p_it
 
@@ -523,121 +550,103 @@ def calculate_outputs(
     p_total_to_offtaker = boost_outputs["Q_heat_to_offtaker"]
     t_offtaker_in = boost_outputs["T_offtaker_in_C"]
 
+    # Default output placeholders.
+    eta_model = None
+    eta_used = None
+    eta_source = "Not used"
+    p_orc = None
+    cop_abs = None
+    q_cooling = None
+    q_cooling_electric_equiv = None
+    wr_case = None
+    wr_dwsf = None
+    wr_swi = None
+    wr_wre = None
+    wr_dwf = None
+    wr_ewif = None
+    wr_acf = None
+    wr_reference_city = row.get("WR_reference_city", None)
+    wr_reference_county = row.get("WR_reference_county", None)
+    wr_e_wr = None
+    wr_delta_wsf_total = None
+    wr_scarcity_benefit = None
+    useful_output = None
+    ure = None
+    ure_basis = "Not applicable"
+
     if application == "ORC":
         if eta_override_enabled:
-            eta = float(eta_override_value)
+            eta_used = float(eta_override_value)
             eta_source = "Manual override"
-            eta_model = get_offtaker_performance(t_offtaker_in, application) if t_offtaker_in is not None else None
+            eta_model = get_offtaker_performance(t_offtaker_in, application)
         else:
-            eta_model = get_offtaker_performance(t_offtaker_in, application) if t_offtaker_in is not None else 0.0
-            eta = eta_model
+            eta_model = get_offtaker_performance(t_offtaker_in, application)
+            eta_used = eta_model
             eta_source = "Internal ORC model"
 
-        p_orc = eta * p_total_to_offtaker
-        cop_abs = None
-        q_cooling = None
-        q_cooling_electric_equiv = None
-        water_delta_wsf_total = None
-        water_scarcity_benefit = None
-        dwsf = None
-        swi = None
-
+        p_orc = eta_used * p_total_to_offtaker
         useful_output = p_orc
-
-        ure = calculate_ure_orc(
-            e_elect=p_orc,
-            e_boost=e_boost,
-            e_it=p_it,
-        )
+        ure = calculate_ure_orc(e_elect=p_orc, e_boost=e_boost, e_it=p_it)
         ure_basis = "ORC: electric output minus heat pump boost electricity, normalized by IT load"
 
     elif application == "Cold water generation using an absorption chiller":
         if eta_override_enabled:
             cop_abs = float(eta_override_value)
             eta_source = "Manual override"
-            eta_model = get_offtaker_performance(
-                t_offtaker_in,
-                application,
-                abs_evap_temp_c=abs_evap_temp_c,
-            ) if t_offtaker_in is not None else None
+            eta_model = get_offtaker_performance(t_offtaker_in, application, abs_evap_temp_c=abs_evap_temp_c)
         else:
-            eta_model = get_offtaker_performance(
-                t_offtaker_in,
-                application,
-                abs_evap_temp_c=abs_evap_temp_c,
-            ) if t_offtaker_in is not None else 0.0
+            eta_model = get_offtaker_performance(t_offtaker_in, application, abs_evap_temp_c=abs_evap_temp_c)
             cop_abs = eta_model
             eta_source = "Internal absorption chiller COP model"
 
-        p_orc = None
-        eta = cop_abs
+        eta_used = cop_abs
         q_cooling = cop_abs * p_total_to_offtaker
-        q_cooling_electric_equiv = q_cooling / DX_CHILLER_COP
-        useful_output = q_cooling_electric_equiv
-        water_delta_wsf_total = None
-        water_scarcity_benefit = None
-        dwsf = None
-        swi = None
-
-        ure = calculate_ure_absorption(
+        ure, q_cooling_electric_equiv = calculate_ure_absorption(
             q_cooling_thermal=q_cooling,
             e_boost=e_boost,
             e_it=p_it,
             dx_chiller_cop=DX_CHILLER_COP,
         )
+        useful_output = q_cooling_electric_equiv
         ure_basis = (
             "Absorption chiller: cooling output converted to electric-equivalent using "
             f"DX COP = {DX_CHILLER_COP:.1f}, minus heat pump boost electricity, normalized by IT load"
         )
 
     elif application == "Water reclamation":
-        dwsf = None if pd.isna(row["WR_CaseB_DWSF_L_per_kWh"]) else float(row["WR_CaseB_DWSF_L_per_kWh"])
-        swi = None if pd.isna(row["WR_SWI_L_per_kWh"]) else float(row["WR_SWI_L_per_kWh"])
+        wr_case = get_water_reclamation_case(CASE_METADATA[case_num])
+        wr_cols = WR_CASE_COLUMN_MAP[wr_case]
 
-        if dwsf is None or swi is None:
+        wr_dwsf = None if pd.isna(row[wr_cols["DWSF"]]) else float(row[wr_cols["DWSF"]])
+        wr_wre = None if pd.isna(row[wr_cols["WRE"]]) else float(row[wr_cols["WRE"]])
+        wr_dwf = None if pd.isna(row[wr_cols["DWF"]]) else float(row[wr_cols["DWF"]])
+        wr_swi = None if pd.isna(row["WR_SWI_L_per_kWh"]) else float(row["WR_SWI_L_per_kWh"])
+        wr_ewif = None if pd.isna(row["WR_EWIF_L_per_kWh"]) else float(row["WR_EWIF_L_per_kWh"])
+        wr_acf = None if pd.isna(row["WR_AWARE_CF"]) else float(row["WR_AWARE_CF"])
+
+        if wr_dwsf is None or wr_swi is None:
             raise ValueError(
-                "Water reclamation requires WR_CaseB_DWSF_L_per_kWh and WR_SWI_L_per_kWh "
+                f"Water reclamation requires {wr_cols['DWSF']} and WR_SWI_L_per_kWh "
                 "in the input file for the selected county/climate zone."
             )
 
-        p_orc = None
-        eta_model = None
-        eta = None
-        eta_source = "Megan Ward Case B DWSF/SWI table"
-        cop_abs = None
-        q_cooling = None
-        q_cooling_electric_equiv = None
-
-        ure, water_delta_wsf_total = calculate_ure_water_reclamation(
-            dwsf_l_per_kwh=dwsf,
-            swi_l_per_kwh=swi,
-            q_heat_to_application=p_total_to_offtaker,
-            e_boost=e_boost,
+        # Corrected unit-consistent interpretation:
+        # DWSF_Megan = Delta_WSF / E_WR.
+        # In the app, E_WR is represented by the heat-pump boost electricity.
+        wr_e_wr = e_boost
+        ure, wr_delta_wsf_total, wr_scarcity_benefit = calculate_ure_water_reclamation(
+            dwsf_l_per_kwh=wr_dwsf,
+            swi_l_per_kwh=wr_swi,
+            e_wr=wr_e_wr,
             e_it=p_it,
         )
-
-        water_scarcity_benefit = -water_delta_wsf_total
-        useful_output = water_scarcity_benefit
+        useful_output = wr_scarcity_benefit
+        eta_source = f"Megan Ward Case {wr_case} DWSF/SWI table mapped by climate zone"
         ure_basis = (
-            "Water reclamation: reduction in water scarcity footprint from Megan Case B DWSF, "
-            "including heat pump boost electricity penalty, normalized by IT load and SWI"
+            f"Water reclamation: Megan Case {wr_case} DWSF scaled by E_WR, "
+            "where E_WR is the energy input to the water reclamation/boosting system. "
+            "URE_water = -(DWSF × E_WR) / (SWI × E_IT)."
         )
-
-    else:
-        eta_model = None
-        eta = None
-        eta_source = "Not used"
-        p_orc = None
-        cop_abs = None
-        q_cooling = None
-        q_cooling_electric_equiv = None
-        useful_output = None
-        water_delta_wsf_total = None
-        water_scarcity_benefit = None
-        dwsf = None
-        swi = None
-        ure = None
-        ure_basis = "Not applicable"
 
     return {
         "PIT": p_it,
@@ -661,17 +670,25 @@ def calculate_outputs(
         "HP_COP_model": boost_outputs["HP_COP_model"],
         "Ptotal_offtaker": p_total_to_offtaker,
         "eta_model": eta_model,
-        "eta_used": eta,
+        "eta_used": eta_used,
         "eta_source": eta_source,
         "PORC": p_orc,
         "COP_abs": cop_abs,
         "Q_cooling": q_cooling,
         "Q_cooling_electric_equiv": q_cooling_electric_equiv,
         "DX_chiller_COP": DX_CHILLER_COP,
-        "WR_CaseB_DWSF_L_per_kWh": dwsf,
-        "WR_SWI_L_per_kWh": swi,
-        "WR_delta_wsf_total": water_delta_wsf_total,
-        "WR_scarcity_benefit": water_scarcity_benefit,
+        "WR_case_used": wr_case,
+        "WR_reference_city": wr_reference_city,
+        "WR_reference_county": wr_reference_county,
+        "WR_WRE_g_per_kJ": wr_wre,
+        "WR_DWF_L_per_kWh": wr_dwf,
+        "WR_DWSF_L_per_kWh": wr_dwsf,
+        "WR_EWIF_L_per_kWh": wr_ewif,
+        "WR_AWARE_CF": wr_acf,
+        "WR_SWI_L_per_kWh": wr_swi,
+        "WR_E_WR": wr_e_wr,
+        "WR_delta_wsf_total": wr_delta_wsf_total,
+        "WR_scarcity_benefit": wr_scarcity_benefit,
         "useful_output": useful_output,
         "URE": ure,
         "URE basis": ure_basis,
@@ -684,7 +701,7 @@ def calculate_outputs(
 # -------------------------------------------------------------------
 data_file = st.sidebar.text_input(
     "PUE + water reclamation data file (.csv or .xlsx)",
-    "based_on_state_county_add_w_reclamation.csv",
+    "based_on_state_county_add_w_reclamation_v2.csv",
 )
 
 try:
@@ -707,7 +724,6 @@ case_label = st.selectbox(
     [CASE_METADATA[k]["label"] for k in CASE_METADATA],
     index=13,
 )
-
 case_num = int(case_label.split("-")[0].replace("Case", "").strip())
 default_temp = CASE_METADATA[case_num]["default_temp_c"]
 case_info = CASE_METADATA[case_num]
@@ -716,14 +732,12 @@ states = get_states(df)
 if not states:
     st.warning("No states found in the input file.")
     st.stop()
-
 state = st.selectbox("State", states)
 
 counties = get_counties_for_state(df, state)
 if not counties:
     st.warning("No counties found for the selected state.")
     st.stop()
-
 county = st.selectbox("County", counties)
 
 application = st.selectbox("Offtaker", APPLICATION_OPTIONS)
@@ -740,7 +754,6 @@ else:
 
 temp = st.number_input("Waste heat temperature (°C)", value=float(default_temp))
 asic = st.checkbox("ASIC chips (+5°C)")
-
 effective_temp_preview = float(temp) + (5.0 if asic else 0.0)
 
 phi_use_percent = st.slider(
@@ -753,23 +766,25 @@ phi_use_percent = st.slider(
 )
 phi_use = phi_use_percent / 100.0
 
-# Advisor-requested replacement for manual E_IN/E_N:
-# User chooses whether to boost waste heat temperature. The app calculates heat pump electricity.
+# -------------------------------------------------------------------
+# Waste heat boosting
+# -------------------------------------------------------------------
 st.subheader("Waste Heat Boosting")
 
+boost_default = True if application == "Water reclamation" else False
 boost_enabled = st.checkbox(
     "Boost waste heat temperature using a heat pump",
-    value=False,
+    value=boost_default,
     help=(
-        "When enabled, the app estimates the heat pump electricity required to raise the waste heat "
-        "from the available temperature to the selected boosted temperature."
+        "When enabled, the app estimates heat pump electricity required to raise waste heat "
+        "from the available temperature to the selected boosted temperature. For water reclamation, "
+        "this boost electricity is used as E_WR in the corrected URE formulation."
     ),
 )
 
 if boost_enabled:
     min_boost_temp = effective_temp_preview + 0.1
     default_boost_temp = max(effective_temp_preview + 5.0, 70.0)
-
     boosted_temp_c = st.number_input(
         "Boosted waste heat temperature delivered to offtaker (°C)",
         min_value=float(min_boost_temp),
@@ -779,8 +794,8 @@ if boost_enabled:
     )
 
     st.caption(
-        "Heat pump COP is estimated using the Bever et al. (2024) high-temperature "
-        "industrial heat pump correlation: COP = 52.94 × ΔT_lift^(-0.716)."
+        "Heat pump COP is estimated using a high-temperature industrial heat pump correlation: "
+        "COP_HP = 52.94 × ΔT_lift^(-0.716), where ΔT_lift = T_boosted - T_available."
     )
 
     try:
@@ -799,6 +814,11 @@ if boost_enabled:
         st.warning(f"Boosting calculation issue: {e}")
 else:
     boosted_temp_c = None
+    if application == "Water reclamation":
+        st.warning(
+            "Water reclamation URE uses E_WR, the energy input to the water reclamation system. "
+            "With boosting disabled, E_WR is currently modeled as 0, so water reclamation URE will be 0."
+        )
 
 
 # -------------------------------------------------------------------
@@ -806,6 +826,7 @@ else:
 # -------------------------------------------------------------------
 st.subheader("Cooling System Case Details")
 
+wr_case_preview = get_water_reclamation_case(case_info)
 case_details_df = pd.DataFrame([
     {
         "Case": f"Case {case_num}",
@@ -813,14 +834,20 @@ case_details_df = pd.DataFrame([
         "Primary heat removal approach": case_info["heat_removal"],
         "Chiller/system type": case_info["chiller"],
         "Economizer type": case_info["economizer"],
-        "Liquid cooling": case_info["liquid_cooling"],
+        "IT-side liquid cooling": case_info["liquid_cooling"],
+        "Megan WR case mapping": f"Case {wr_case_preview}",
         "Recommended waste heat temperature (°C)": case_info["default_temp_c"],
         "Q_avail factor": Q_AVAIL_FACTOR[case_num],
     }
 ])
-
 st.dataframe(case_details_df, use_container_width=True)
 st.info(case_info["short_description"])
+
+if application == "Water reclamation" and wr_case_preview == "A" and "water-cooled" in normalize_text(case_info["chiller"]):
+    st.warning(
+        "This case uses water-cooled equipment at the chiller/system level but has no IT-side liquid cooling. "
+        "It is currently mapped to Megan Case A based on IT-side cooling configuration, pending advisor confirmation."
+    )
 
 
 # -------------------------------------------------------------------
@@ -835,7 +862,6 @@ matched = df[
 if matched.empty:
     st.warning("No matching row found for the selected state, county, and cooling system type.")
     st.stop()
-
 row = matched.iloc[0]
 
 
@@ -843,12 +869,10 @@ row = matched.iloc[0]
 # Optional overrides
 # -------------------------------------------------------------------
 st.subheader("Optional Overrides")
-
 col1, col2 = st.columns(2)
 
 with col1:
     pue_override_enabled = st.checkbox("Override PUE value")
-
     if pue_override_enabled:
         default_pue_for_override = float(row["PUE mean"]) if not pd.isna(row["PUE mean"]) else 1.20
         pue_override_value = st.number_input(
@@ -864,29 +888,21 @@ with col1:
 with col2:
     if application in ["ORC", "Cold water generation using an absorption chiller"]:
         preview_primary_temp = boosted_temp_c if boost_enabled else effective_temp_preview
-
         eta_preview = get_offtaker_performance(
             preview_primary_temp,
             application,
             abs_evap_temp_c=abs_evap_temp_c,
-        ) if preview_primary_temp is not None else 0.0
+        )
 
         eta_override_enabled = st.checkbox("Override offtaker performance")
-
         if application == "ORC":
             default_manual_value = float(eta_preview * 100.0)
             label_text = "Manual ORC efficiency (%)"
-            min_val = 0.0
-            max_val = 100.0
-            step_val = 0.1
-            format_val = "%.2f"
+            min_val, max_val, step_val, format_val = 0.0, 100.0, 0.1, "%.2f"
         else:
             default_manual_value = float(eta_preview)
             label_text = "Manual absorption chiller COP"
-            min_val = 0.0
-            max_val = 10.0
-            step_val = 0.01
-            format_val = "%.4f"
+            min_val, max_val, step_val, format_val = 0.0, 10.0, 0.01, "%.4f"
 
         if eta_override_enabled:
             manual_value = st.number_input(
@@ -897,17 +913,13 @@ with col2:
                 step=step_val,
                 format=format_val,
             )
-
-            if application == "ORC":
-                eta_override_value = manual_value / 100.0
-            else:
-                eta_override_value = manual_value
+            eta_override_value = manual_value / 100.0 if application == "ORC" else manual_value
         else:
             eta_override_value = None
     else:
         eta_override_enabled = False
         eta_override_value = None
-        st.info("Water reclamation uses the Case B DWSF and SWI values from the input file; no performance override is used.")
+        st.info("Water reclamation uses Megan's WR DWSF and SWI values from the input file; no performance override is used.")
 
 
 # -------------------------------------------------------------------
@@ -921,13 +933,14 @@ if pd.isna(row["PUE mean"]) and not pue_override_enabled:
     st.stop()
 
 if application == "Water reclamation":
-    if pd.isna(row["WR_CaseB_DWSF_L_per_kWh"]) or pd.isna(row["WR_SWI_L_per_kWh"]):
+    wr_case_validation = get_water_reclamation_case(case_info)
+    dwsf_col = WR_CASE_COLUMN_MAP[wr_case_validation]["DWSF"]
+    if dwsf_col not in row.index or pd.isna(row[dwsf_col]) or pd.isna(row["WR_SWI_L_per_kWh"]):
         st.warning(
-            "Water reclamation requires WR_CaseB_DWSF_L_per_kWh and WR_SWI_L_per_kWh in the input file. "
-            "Please use the updated file with Megan Ward's Case B water reclamation values."
+            f"Water reclamation requires {dwsf_col} and WR_SWI_L_per_kWh in the input file. "
+            "Please use the updated v2 file with Megan Ward's Case A and Case B values."
         )
         st.stop()
-
     if float(row["WR_SWI_L_per_kWh"]) <= 0:
         st.warning("WR_SWI_L_per_kWh must be greater than zero for the selected row.")
         st.stop()
@@ -961,7 +974,6 @@ except Exception as e:
 # Selected inputs
 # -------------------------------------------------------------------
 st.subheader("Selected Inputs")
-
 selected_inputs_df = pd.DataFrame([
     {
         "Cooling system type": case_label,
@@ -982,10 +994,9 @@ selected_inputs_df = pd.DataFrame([
         "Q_avail factor": outputs["Qavail"],
         "Used waste heat fraction (%)": outputs["phi_use"] * 100,
         "PUE source": outputs["PUE source"],
-        "Performance source": outputs["eta_source"],
+        "Performance/data source": outputs["eta_source"],
     }
 ])
-
 st.dataframe(selected_inputs_df, use_container_width=True)
 
 
@@ -1007,7 +1018,6 @@ common_results = {
     "Heat delivered to offtaker after boost (normalized)": outputs["Ptotal_offtaker"],
     "Available waste heat temperature (°C)": outputs["effective_temp"],
     "Offtaker inlet temperature (°C)": outputs["Tofftaker_in"],
-    "Heat pump COP model": outputs["HP_COP_model"],
     "Heat pump COP": outputs["COP_HP"],
     "Heat pump boost electricity, E_boost": outputs["Eboost"],
     "Useful output after application-specific conversion": outputs["useful_output"],
@@ -1023,7 +1033,6 @@ if application == "ORC":
         "ORC efficiency used": outputs["eta_used"],
         "ORC electric output": outputs["PORC"],
     }
-
 elif application == "Cold water generation using an absorption chiller":
     results_row = {
         **common_results,
@@ -1033,16 +1042,21 @@ elif application == "Cold water generation using an absorption chiller":
         "DX chiller COP for electric-equivalent conversion": outputs["DX_chiller_COP"],
         "Cooling output, electric-equivalent": outputs["Q_cooling_electric_equiv"],
     }
-
 elif application == "Water reclamation":
     results_row = {
         **common_results,
-        "WR Case B DWSF (L/kWh)": outputs["WR_CaseB_DWSF_L_per_kWh"],
+        "Megan WR case used": outputs["WR_case_used"],
+        "WR reference city": outputs["WR_reference_city"],
+        "WR reference county": outputs["WR_reference_county"],
+        "WR WRE (g/kJ)": outputs["WR_WRE_g_per_kJ"],
+        "WR DWF (L/kWh of E_WR)": outputs["WR_DWF_L_per_kWh"],
+        "WR DWSF (L/kWh of E_WR)": outputs["WR_DWSF_L_per_kWh"],
         "WR SWI (L/kWh)": outputs["WR_SWI_L_per_kWh"],
-        "WR total ΔWSF after boost penalty": outputs["WR_delta_wsf_total"],
+        "WR AWARE CF": outputs["WR_AWARE_CF"],
+        "WR energy input, E_WR": outputs["WR_E_WR"],
+        "WR total Delta WSF": outputs["WR_delta_wsf_total"],
         "WR scarcity benefit": outputs["WR_scarcity_benefit"],
     }
-
 else:
     results_row = common_results
 
@@ -1054,37 +1068,21 @@ st.dataframe(results_df, use_container_width=True)
 # Metrics
 # -------------------------------------------------------------------
 st.subheader("Metrics")
-
 c1, c2, c3, c4 = st.columns(4)
 
 with c1:
-    st.metric(
-        "PUE",
-        f"{outputs['PUE mean']:.4f}",
-        help="Power Usage Effectiveness = total data center power / IT power.",
-    )
-
+    st.metric("PUE", f"{outputs['PUE mean']:.4f}", help="Power Usage Effectiveness = total data center power / IT power.")
 with c2:
-    st.metric(
-        "ERF",
-        f"{outputs['ERF mean']:.4f}",
-        help="Energy Reuse Factor = reused data center waste heat / total data center power.",
-    )
-
+    st.metric("ERF", f"{outputs['ERF mean']:.4f}", help="Energy Reuse Factor = reused data center waste heat / total data center power.")
 with c3:
-    st.metric(
-        "ERE",
-        f"{outputs['ERE mean']:.4f}",
-        help="Energy Reuse Effectiveness = (total data center power - reused waste heat) / IT power.",
-    )
-
+    st.metric("ERE", f"{outputs['ERE mean']:.4f}", help="Energy Reuse Effectiveness = (total data center power - reused waste heat) / IT power.")
 with c4:
     st.metric(
         "URE",
         f"{outputs['URE']:.4f}" if outputs["URE"] is not None else "N/A",
         help=(
-            "Useful Reuse Effectiveness = selected application benefit, converted or normalized "
-            "to a comparable basis, minus heat pump boost electricity, normalized by IT load."
+            "Useful Reuse Effectiveness. ORC: electric output basis. Absorption: electric-equivalent cooling basis. "
+            "Water reclamation: scarcity-footprint benefit normalized by SWI and IT load."
         ),
     )
 
@@ -1093,7 +1091,6 @@ with c4:
 # Metric explanations
 # -------------------------------------------------------------------
 st.subheader("Metric Explanations")
-
 metric_explanations_rows = [
     {
         "Metric": "PUE",
@@ -1117,22 +1114,16 @@ metric_explanations_rows = [
             "For ORC this is electric output; for absorption this is electric-equivalent cooling; "
             "for water reclamation this is the reduction in water scarcity footprint normalized by SWI."
         ),
-        "How to interpret": (
-            "Higher is better. A negative value means the boost electricity or application penalty is larger "
-            "than the useful benefit from the selected reuse application."
-        ),
+        "How to interpret": "Higher is better. A negative value means the application penalty exceeds the useful benefit.",
     },
 ]
-
-metric_explanations_df = pd.DataFrame(metric_explanations_rows)
-st.dataframe(metric_explanations_df, use_container_width=True)
+st.dataframe(pd.DataFrame(metric_explanations_rows), use_container_width=True)
 
 
 # -------------------------------------------------------------------
 # URE formulation structure
 # -------------------------------------------------------------------
 st.subheader("URE Formulation Structure")
-
 ure_structure_df = pd.DataFrame(
     [
         {
@@ -1153,8 +1144,8 @@ ure_structure_df = pd.DataFrame(
             "Application type": "Water reclamation",
             "Status in current tool": "Active",
             "End product": "Reduction in water scarcity footprint",
-            "URE formulation": "-((DWSF_CaseB × Q_heat_to_application + SWI × E_boost) / (SWI × E_IT))",
-            "Required output model or data": "Megan Ward Case B DWSF and SWI values mapped by climate zone",
+            "URE formulation": "-(DWSF_Megan × E_WR) / (SWI × E_IT), with E_WR = E_boost",
+            "Required output model or data": "Megan Ward Case A/B DWSF and SWI values mapped by climate zone",
         },
         {
             "Application type": "Carbon capture and storage",
@@ -1165,13 +1156,12 @@ ure_structure_df = pd.DataFrame(
         },
     ]
 )
-
 st.dataframe(ure_structure_df, use_container_width=True)
 
 st.info(
     "Manual E_IN/E_N input has been removed. If waste heat boosting is enabled, the app calculates "
     "heat pump boost electricity from the available waste heat temperature, selected boosted temperature, "
-    "and the Bever et al. (2024) high-temperature industrial heat pump COP correlation."
+    "and the heat-pump COP temperature-lift correlation. Water reclamation uses DWSF × E_WR, not DWSF × Q_heat."
 )
 
 
@@ -1179,7 +1169,6 @@ st.info(
 # Calculation notes
 # -------------------------------------------------------------------
 st.subheader("Calculation Notes")
-
 notes = {
     "PUE source": outputs["PUE source"],
     "PUE file value": f"{outputs['PUE file value']:.4f}" if outputs["PUE file value"] is not None else "Missing",
@@ -1215,30 +1204,32 @@ elif application == "Cold water generation using an absorption chiller":
     notes["Absorption chiller COP used"] = f"{outputs['COP_abs']:.4f}"
     notes["Cooling output, thermal"] = f"{outputs['Q_cooling']:.4f}" if outputs["Q_cooling"] is not None else "N/A"
     notes["DX chiller COP"] = f"{outputs['DX_chiller_COP']:.1f}"
-    notes["Cooling output, electric-equivalent"] = (
-        f"{outputs['Q_cooling_electric_equiv']:.4f}" if outputs["Q_cooling_electric_equiv"] is not None else "N/A"
-    )
+    notes["Cooling output, electric-equivalent"] = f"{outputs['Q_cooling_electric_equiv']:.4f}" if outputs["Q_cooling_electric_equiv"] is not None else "N/A"
     if outputs["eta_model"] is not None:
         notes["Internal absorption chiller COP model"] = f"{outputs['eta_model']:.4f}"
 
 elif application == "Water reclamation":
-    notes["Water reclamation data source"] = "Megan Ward Case B values mapped by climate zone"
-    notes["WR Case B DWSF (L/kWh)"] = f"{outputs['WR_CaseB_DWSF_L_per_kWh']:.4f}"
+    notes["Water reclamation case mapping"] = f"Megan Case {outputs['WR_case_used']}"
+    notes["Mapping rule"] = "No IT-side liquid cooling -> Case A; cold plate/immersion/hybrid IT cooling -> Case B"
+    notes["Reference city"] = outputs["WR_reference_city"]
+    notes["Reference county"] = outputs["WR_reference_county"]
+    notes["WR WRE (g/kJ)"] = f"{outputs['WR_WRE_g_per_kJ']:.4f}" if outputs["WR_WRE_g_per_kJ"] is not None else "N/A"
+    notes["WR DWSF (L/kWh of E_WR)"] = f"{outputs['WR_DWSF_L_per_kWh']:.4f}"
     notes["WR SWI (L/kWh)"] = f"{outputs['WR_SWI_L_per_kWh']:.4f}"
-    notes["WR total ΔWSF after boost penalty"] = f"{outputs['WR_delta_wsf_total']:.4f}"
+    notes["WR energy input, E_WR"] = f"{outputs['WR_E_WR']:.4f}"
+    notes["WR total Delta WSF"] = f"{outputs['WR_delta_wsf_total']:.4f}"
     notes["WR scarcity benefit"] = f"{outputs['WR_scarcity_benefit']:.4f}"
-    if outputs["WR_delta_wsf_total"] is not None:
-        notes["Water reclamation interpretation"] = (
-            "Beneficial reduction" if outputs["WR_delta_wsf_total"] < 0 else "Net increase in water scarcity footprint"
-        )
+    notes["Water reclamation interpretation"] = (
+        "Beneficial reduction" if outputs["WR_delta_wsf_total"] is not None and outputs["WR_delta_wsf_total"] < 0 else "No benefit or net increase"
+    )
+    notes["Important correction"] = "DWSF is multiplied by E_WR, not by Q_heat_to_application."
 
 st.dataframe(pd.DataFrame([notes]), use_container_width=True)
 
 st.caption(
-    "This version uses P_IT as the base for data-center waste heat recovery. "
-    "ERF and ERE are calculated from reused data-center waste heat only. "
-    "URE is calculated based on the selected active application. "
-    "Manual E_IN/E_N has been removed; boost electricity is calculated internally using the Bever et al. (2024) temperature-lift COP correlation when waste heat boosting is enabled. "
+    "This version uses P_IT as the normalized base. ERF and ERE are calculated from reused data-center waste heat only. "
+    "Manual E_IN/E_N has been removed. Boost electricity is calculated internally when waste heat boosting is enabled. "
     "Absorption chiller cooling is converted to electric-equivalent output using a typical DX chiller COP of 3.0. "
-    "Water reclamation uses Megan Ward's Case B DWSF and SWI values from the input file."
+    "Water reclamation uses Megan Ward's DWSF values mapped by climate zone and by Case A/Case B configuration. "
+    "The corrected water reclamation formulation is DWSF × E_WR, not DWSF × Q_heat."
 )
