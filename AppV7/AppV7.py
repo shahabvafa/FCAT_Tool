@@ -516,39 +516,43 @@ def calculate_ure_water_reclamation_word(
             "This is the operating-condition-dependent baseline metric in L/kWh."
         )
 
-nb_wr = v_water_l * aware_cf - e_in_wr_kwh * swi_l_per_kwh
-beta_wr = baseline_hpd_l_per_kwh * aware_cf - swi_l_per_kwh
+    nb_wr = v_water_l * aware_cf - e_in_wr_kwh * swi_l_per_kwh
+    beta_wr = baseline_hpd_l_per_kwh * aware_cf - swi_l_per_kwh
 
-if beta_wr <= 0:
-    min_required_hpd = swi_l_per_kwh / aware_cf if aware_cf > 0 else np.nan
+    if beta_wr <= 0:
+        min_required_hpd = swi_l_per_kwh / aware_cf if aware_cf > 0 else np.nan
 
-    actual_wr_l_per_kwh = np.nan
-    if e_in_wr_kwh > 0:
-        actual_wr_l_per_kwh = v_water_l / e_in_wr_kwh
+        actual_wr_l_per_kwh = np.nan
+        if e_in_wr_kwh > 0:
+            actual_wr_l_per_kwh = v_water_l / e_in_wr_kwh
 
-    return {
-        "URE": np.nan,
-        "E_NB": np.nan,
-        "NB": nb_wr,
-        "beta": beta_wr,
-        "E_in": e_in_wr_kwh,
-        "actual_WR_L_per_kWh": actual_wr_l_per_kwh,
-        "status": "not_applicable",
-        "message": (
-            "Water URE is not applicable because beta_WR <= 0. "
-            "The HPD/AWG baseline does not provide a positive net water benefit "
-            "under this AWARE_CF and SWI."
-        ),
-        "minimum_required_HPD_baseline_L_per_kWh": min_required_hpd,
-    }
+        return {
+            "URE": np.nan,
+            "E_NB": np.nan,
+            "NB_WR": nb_wr,
+            "beta_WR": beta_wr,
+            "actual_WR_L_per_kWh": actual_wr_l_per_kwh,
+            "v_water_l": v_water_l,
+            "e_in_wr_kwh": e_in_wr_kwh,
+            "aware_cf": aware_cf,
+            "swi_l_per_kwh": swi_l_per_kwh,
+            "baseline_hpd_l_per_kwh": baseline_hpd_l_per_kwh,
+            "status": "not_applicable",
+            "message": (
+                "Water URE is not applicable because beta_WR <= 0. "
+                "The HPD/AWG baseline does not provide a positive net water benefit "
+                "under this AWARE_CF and SWI."
+            ),
+            "minimum_required_HPD_baseline_L_per_kWh": min_required_hpd,
+        }
 
-e_nb_wr = calculate_word_enb(
-    net_benefit=nb_wr,
-    beta_nb=beta_wr,
-    e_in=e_in_wr_kwh,
-)
+    e_nb_wr = calculate_word_enb(
+        net_benefit=nb_wr,
+        beta_nb=beta_wr,
+        e_in=e_in_wr_kwh,
+    )
 
-ure_wr = e_nb_wr / e_it_kwh
+    ure_wr = e_nb_wr / e_it_kwh
 
     actual_wr_l_per_kwh = np.nan
     if e_in_wr_kwh > 0:
@@ -565,6 +569,7 @@ ure_wr = e_nb_wr / e_it_kwh
         "aware_cf": aware_cf,
         "swi_l_per_kwh": swi_l_per_kwh,
         "baseline_hpd_l_per_kwh": baseline_hpd_l_per_kwh,
+        "status": "ok",
     }
 
 
