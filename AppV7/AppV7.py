@@ -520,11 +520,27 @@ def calculate_ure_water_reclamation_word(
     beta_wr = baseline_hpd_l_per_kwh * aware_cf - swi_l_per_kwh
 
     if beta_wr <= 0:
-        raise ValueError(
-            "Water baseline beta_WR is not positive. "
-            "Check HPD baseline L/kWh, AWARE_CF, and SWI. "
-            "beta_WR = baseline_HPD_L_per_kWh * AWARE_CF - SWI must be > 0."
-        )
+    min_required_hpd = swi_l_per_kwh / aware_cf if aware_cf > 0 else np.nan
+
+    actual_wr_l_per_kwh = np.nan
+    if e_in_wr_kwh > 0:
+        actual_wr_l_per_kwh = v_water_l / e_in_wr_kwh
+
+    return {
+        "URE": np.nan,
+        "E_NB": np.nan,
+        "NB": nb_wr,
+        "beta": beta_wr,
+        "E_in": e_in_wr_kwh,
+        "actual_WR_L_per_kWh": actual_wr_l_per_kwh,
+        "status": "not_applicable",
+        "message": (
+            "Water URE is not applicable because beta_WR <= 0. "
+            "The HPD/AWG baseline does not provide a positive net water benefit "
+            "under this AWARE_CF and SWI."
+        ),
+        "minimum_required_HPD_baseline_L_per_kWh": min_required_hpd,
+    }
 
     e_nb_wr = calculate_word_enb(
         net_benefit=nb_wr,
@@ -1271,7 +1287,7 @@ wr_override_params = None
 ccs_override_params = None
 
 if application == "Water reclamation":
-    st.subheader("Water Reclamation Parameters for Word 5/22/26 URE")
+    st.subheader("Water Reclamation Parameters")
 
     wr_map = get_water_reclamation_mapping(case_num)
     wr_config = wr_map["wr_config"]
