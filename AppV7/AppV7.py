@@ -6,7 +6,7 @@ APP_DIR = Path(__file__).resolve().parent
 # -------------------------------------------------------------------
 # Page setup
 # -------------------------------------------------------------------
-st.set_page_config(page_title="FCAT Waste Heat Reuse Demo - Word 5/22/26 URE", layout="wide")
+st.set_page_config(page_title="FCAT Waste Heat Reuse Demo", layout="wide")
 
 st.title("FCAT Waste Heat Reuse Demo")
 st.markdown(
@@ -1067,7 +1067,7 @@ def calculate_outputs(
 # -------------------------------------------------------------------
 data_file = st.sidebar.text_input(
     "PUE + URE data file (.csv or .xlsx)",
-    str(APP_DIR / "based_on_state_county_add_w_reclamation_v4.csv"),
+    str(APP_DIR / "based_on_state_county_add_w_reclamation_v4_with_EES_HPD_baseline.csv"),
 )
 
 try:
