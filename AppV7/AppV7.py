@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-
+from pathlib import Path
+APP_DIR = Path(__file__).resolve().parent
 # -------------------------------------------------------------------
 # Page setup
 # -------------------------------------------------------------------
@@ -1044,7 +1045,7 @@ def calculate_outputs(
 # -------------------------------------------------------------------
 data_file = st.sidebar.text_input(
     "PUE + URE data file (.csv or .xlsx)",
-    "based_on_state_county_add_w_reclamation_v2.csv",
+    str(APP_DIR / "based_on_state_county_add_w_reclamation_v4.csv"),
 )
 
 try:
