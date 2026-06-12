@@ -8,7 +8,7 @@ APP_DIR = Path(__file__).resolve().parent
 # -------------------------------------------------------------------
 st.set_page_config(page_title="FCAT Waste Heat Reuse version 7", layout="wide")
 
-st.title("FCAT Waste Heat Reuse version 7")
+st.title("FCAT Waste Heat Reuse Version 7")
 st.markdown(
     "Select cooling system type, state, county, and offtaker application. "
     "This tool calculates URE, ERF, ERE, and PUE for ORC, absorption chiller, "
