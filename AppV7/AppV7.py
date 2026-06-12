@@ -11,7 +11,7 @@ st.set_page_config(page_title="FCAT Waste Heat Reuse Demo", layout="wide")
 st.title("FCAT Waste Heat Reuse Demo")
 st.markdown(
     "Select cooling system type, state, county, and offtaker application. "
-    "This version implements the Word 5/22/26 URE structure for ORC, absorption chiller, "
+    "This tool calculates URE, ERF, ERE, and PUE for ORC, absorption chiller, "
     "water reclamation, and carbon capture/recovery."
 )
 
@@ -1283,7 +1283,7 @@ with col2:
     else:
         eta_override_enabled = False
         eta_override_value = None
-        st.info("This application uses Word 5/22/26 benefit/baseline parameters, not ORC/COP performance override.")
+        
 
 
 # -------------------------------------------------------------------
@@ -1717,9 +1717,9 @@ st.dataframe(ure_structure_df, use_container_width=True)
 
 st.info(
     "This version removes the old water formulation based on DWSF × E_WR. "
-    "Water reclamation now follows the Word 5/22/26 formulation using V_w, E_in_WR, AWARE_CF, SWI, "
+    "Water reclamation now follows the document on 5/22/26 formulation using V_w, E_in_WR, AWARE_CF, SWI, "
     "and an operating-condition-dependent heat pump dehumidifier baseline. "
-    "CCS now follows the Word 5/22/26 formulation using m_CO2e, E_in_CCS, CEF, and a fixed CCS baseline."
+    "Carbon capture formulation will be completed in Version 8."
 )
 
 
