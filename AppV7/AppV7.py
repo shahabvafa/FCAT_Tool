@@ -1698,7 +1698,7 @@ ure_structure_df = pd.DataFrame([
     },
     {
         "Application type": "Water reclamation",
-        "Status in current tool": "Active, requires new VTAS/baseline data",
+        "Status in current tool": "Active",
         "Net benefit, NB": "V_w*A_CF - E_in_WR*SWI",
         "Baseline beta_NB": "HPD_baseline_L_per_kWh*A_CF - SWI",
         "URE formulation": "((NB_WR / beta_WR) - E_in_WR) / E_IT",
