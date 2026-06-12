@@ -1621,9 +1621,14 @@ with c2:
 with c3:
     st.metric("ERE", f"{outputs['ERE mean']:.4f}", help="Energy Reuse Effectiveness = (total data center power - reused waste heat) / IT power.")
 with c4:
+    ure_display = outputs['URE']
+    if ure_display is None or (isinstance(ure_display, float) and np.isnan(float(ure_display))):
+        ure_str = "N/A"
+    else:
+        ure_str = f"{float(ure_display):.4f}"
     st.metric(
         "URE",
-        f"{outputs['URE']:.4f}" if outputs["URE"] is not None else "N/A",
+        ure_str,
         help="Useful Reuse Effectiveness = electrical-equivalent net benefit divided by IT load.",
     )
 
@@ -1631,6 +1636,15 @@ with c4:
 # -------------------------------------------------------------------
 # Metric explanations
 # -------------------------------------------------------------------
+if application == "Water reclamation":
+    wr_status = outputs.get("WR_status")
+    if wr_status == "not_applicable":
+        st.warning(
+            "⚠️ Water reclamation URE is not applicable in this region "
+            "under the water scarcity framework (β_WR ≤ 0). "
+            "This occurs in low water-stress regions where the electricity "
+            "water footprint (SWI) exceeds the scarcity benefit of water produced."
+        )
 st.subheader("Metric Explanations")
 metric_explanations_rows = [
     {
