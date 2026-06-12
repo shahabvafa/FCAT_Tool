@@ -6,7 +6,7 @@ APP_DIR = Path(__file__).resolve().parent
 # -------------------------------------------------------------------
 # Page setup
 # -------------------------------------------------------------------
-st.set_page_config(page_title="FCAT Waste Heat Reuse Demo", layout="wide")
+st.set_page_config(page_title="FCAT Waste Heat Reuse version 7", layout="wide")
 
 st.title("FCAT Waste Heat Reuse Demo")
 st.markdown(
