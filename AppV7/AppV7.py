@@ -892,7 +892,6 @@ def calculate_outputs(
         if wr_config is None and not wr_override_params:
             raise ValueError(
                 "No direct VTAS mapping is currently available for this FCAT case. "
-                "Provide manual WR parameters or develop a direct VTAS model for this case."
             )
 
         if wr_override_params:
