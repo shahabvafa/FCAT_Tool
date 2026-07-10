@@ -162,7 +162,7 @@ CASE_METADATA = {
 }
 
 APPLICATION_OPTIONS = [
-    "ORC",
+    "Power generation using an organic Rankine cycle (ORC)",
     "Cold water generation using an absorption chiller",
     "Water reclamation",
     "Carbon capture and storage",
@@ -326,7 +326,7 @@ def cop_use_absorption(T_gen_C, T_evap_C):
 
 
 def get_offtaker_performance(T_avail_C, application, abs_evap_temp_c=None):
-    if application == "ORC":
+    if application == "Power generation using an organic Rankine cycle (ORC)":
         return float(eta_use_orc(np.array([T_avail_C]))[0])
 
     if application == "Cold water generation using an absorption chiller":
@@ -905,7 +905,7 @@ def calculate_outputs(
     wr_details = {}
     ccs_details = {}
 
-    if application == "ORC":
+    if application == "Power generation using an organic Rankine cycle (ORC)":
         if eta_override_enabled:
             eta_used = float(eta_override_value)
             eta_source = "Manual override"
@@ -1131,7 +1131,7 @@ def calculate_outputs(
 # -------------------------------------------------------------------
 data_file = st.sidebar.text_input(
     "PUE + URE data file (.csv or .xlsx)",
-    str(APP_DIR / "FCAT_v8.csv"),
+    str(APP_DIR / "based_on_state_county_add_w_reclamation_v6_with_EES_Main2_HPD_baseline.csv"),
 )
 
 try:
@@ -1339,7 +1339,7 @@ with col1:
         pue_override_value = None
 
 with col2:
-    if application in ["ORC", "Cold water generation using an absorption chiller"]:
+    if application in ["Power generation using an organic Rankine cycle (ORC)", "Cold water generation using an absorption chiller"]:
         preview_primary_temp = boosted_temp_c if boost_enabled else effective_temp_preview
         eta_preview = get_offtaker_performance(
             preview_primary_temp,
@@ -1348,7 +1348,7 @@ with col2:
         )
 
         eta_override_enabled = st.checkbox("Override offtaker performance")
-        if application == "ORC":
+        if application == "Power generation using an organic Rankine cycle (ORC)":
             default_manual_value = float(eta_preview * 100.0)
             label_text = "Manual ORC efficiency (%)"
             min_val, max_val, step_val, format_val = 0.0, 100.0, 0.1, "%.2f"
@@ -1366,7 +1366,7 @@ with col2:
                 step=step_val,
                 format=format_val,
             )
-            eta_override_value = manual_value / 100.0 if application == "ORC" else manual_value
+            eta_override_value = manual_value / 100.0 if application == "Power generation using an organic Rankine cycle (ORC)" else manual_value
         else:
             eta_override_value = None
     else:
@@ -1611,7 +1611,7 @@ common_results = {
     "ERE mean": outputs["ERE mean"],
 }
 
-if application == "ORC":
+if application == "Power generation using an organic Rankine cycle (ORC)":
     results_row = {
         **common_results,
         "ORC efficiency used": outputs["eta_used"],
@@ -1812,7 +1812,7 @@ notes = {
     "ERE": f"{outputs['ERE mean']:.4f}",
 }
 
-if application == "ORC":
+if application == "Power generation using an organic Rankine cycle (ORC)":
     notes["Performance source"] = outputs["eta_source"]
     notes["Efficiency used"] = f"{outputs['eta_used']:.4f} ({outputs['eta_used'] * 100:.2f}%)"
     notes["ORC electric output"] = f"{outputs['PORC']:.4f}" if outputs["PORC"] is not None else "N/A"
