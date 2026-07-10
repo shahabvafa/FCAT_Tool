@@ -1131,7 +1131,7 @@ def calculate_outputs(
 # -------------------------------------------------------------------
 data_file = st.sidebar.text_input(
     "PUE + URE data file (.csv or .xlsx)",
-    str(APP_DIR / "based_on_state_county_add_w_reclamation_v6_with_EES_Main2_HPD_baseline.csv"),
+    str(APP_DIR / "FCAT_v8.csv"),
 )
 
 try:
