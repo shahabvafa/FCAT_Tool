@@ -6,9 +6,9 @@ APP_DIR = Path(__file__).resolve().parent
 # -------------------------------------------------------------------
 # Page setup
 # -------------------------------------------------------------------
-st.set_page_config(page_title="PURE Waste Heat Reuse version 8", layout="wide")
+st.set_page_config(page_title="PURE Platform for Understanding and Reusing Energy version 8", layout="wide")
 
-st.title("PURE Waste Heat Reuse Version 8")
+st.title("PURE Platform for Understanding and Reusing Energy Version 8")
 st.markdown(
     "Select cooling system type, state, county, and offtaker application. "
     "This tool calculates URE, ERF, ERE, and PUE for ORC, absorption chiller, "
