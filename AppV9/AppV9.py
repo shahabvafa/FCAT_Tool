@@ -12,7 +12,7 @@ st.markdown(
     """
     <div style="line-height:1.1; margin-bottom:0.6rem;">
         <span style="font-size:3.2rem; font-weight:700; letter-spacing:0.02em;">PURE</span>
-        <span style="font-size:1.1rem; font-weight:600; margin-left:0.6rem; opacity:0.75;">Version 8</span>
+        <span style="font-size:1.1rem; font-weight:600; margin-left:0.6rem; opacity:0.75;">Version 9</span>
         <div style="font-size:1.0rem; font-weight:400; opacity:0.7; margin-top:0.15rem;">
             Platform for Understanding and Reusing Energy
         </div>
